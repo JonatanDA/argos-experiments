@@ -1,0 +1,120 @@
+<?xml version="1.0"?>
+<argos-configuration>
+    <framework>
+        <experiment 
+            length="5000" 
+            ticks_per_second="5" 
+            random_seed = "187014"
+            />
+        <system threads="0"/>
+    </framework>
+
+    <controllers>
+
+        <lua_controller id="lua"> 
+
+            <actuators>
+                <differential_steering implementation="default"/>
+                <leds implementation="default" medium="leds"/>
+                <range_and_bearing implementation="default" medium="rab"/>
+            </actuators>
+
+            <sensors>
+                <footbot_proximity implementation="default" show_rays="true"/>
+                <positioning implementation="default"/>
+                <colored_blob_omnidirectional_camera implementation="rot_z_only" show_rays="true" medium="leds"/>
+                <range_and_bearing implementation="medium" medium="rab"/>
+                <footbot_base_ground implementation="rot_z_only"/>
+                <footbot_motor_ground implementation="rot_z_only"/>
+                <footbot_light implementation="rot_z_only"/>
+            </sensors>
+
+            <params  script="Winfield_exp1.lua"/>
+
+            <!-- <params/> -->
+
+        </lua_controller>
+
+    </controllers>
+ 
+
+
+    <arena size="3,3,3" center="0,0,0.5">
+
+        <!-- light -->
+            <!-- <light id="light"
+            position="2,2,1"
+            orientation="0,0,0"
+            color="yellow"
+            intensity="3.0"
+            medium="leds" /> -->
+
+        <!-- Floor -->
+        <!-- <floor id="floor" source="loop_functions" pixels_per_meter="100" /> -->
+        <floor id="floor" source="image" path="Arena/floor_Winfield_exp1.png"/>
+    
+        <box id="wall_north" size="3,0.1,0.5" movable="false">
+        <body position="0,1.5,0" orientation="0,0,0"/>
+        </box>
+        <box id="wall_south" size="3,0.1,0.5" movable="false">
+        <body position="0,-1.5,0" orientation="0,0,0"/>
+        </box>
+        <box id="wall_east" size="0.1,3,0.5" movable="false">
+        <body position="1.5,0,0" orientation="0,0,0"/>
+        </box>
+        <box id="wall_west" size="0.1,3,0.5" movable="false">
+        <body position="-1.5,0,0" orientation="0,0,0"/>
+        </box>
+
+
+        <foot-bot id="Footbot100" omnidirectional_camera_aperture="81.8" >
+            <body position="-0.5,0,0" orientation="0,0,0" />
+            <controller config="lua"/>
+        </foot-bot>  
+
+        <foot-bot id="Footbot200" omnidirectional_camera_aperture="81.8" >
+            <body position=" 0.5,0,0" orientation="180,0,0" />
+            <controller config="lua"/>
+        </foot-bot>   
+
+
+         <!-- <cylinder id="ancla_invisible_purple" radius="0.00000000001" height="0.00000000001" movable="false">
+        <body position="-0.6, 0, 0" orientation="0,0,0"/>
+        <leds medium="leds">
+            <led offset="0,0,0.005" anchor="origin" color="purple"/>
+        </leds>
+        </cylinder>
+
+        <cylinder id="ancla_invisible_blue" radius="0.00000000001" height="0.00000000001" movable="false">
+            <body position="0.4, 0, 0" orientation="0,0,0"/>
+            <leds medium="leds">
+                <led offset="0,0,0.005" anchor="origin" color="blue"/>
+            </leds>
+        </cylinder> -->
+
+    </arena> 
+
+
+    <physics_engines>
+        <dynamics2d id="dyn2d"/>
+    </physics_engines>
+
+    <media>
+        <range_and_bearing id="rab"/>
+        <led id="leds"/>
+    </media>
+
+        <!-- <user_functions library="librobot_id_qtuser_functions.so"/> -->
+        
+    <visualization>
+    <qt-opengl lua_editor="true">
+        <camera>
+        <placements>
+            <placement index="0" position="0,0,4.34" look_at="0,0,0" up="0,1,0" lens_focal_length="37" />
+        </placements>
+        </camera>
+    </qt-opengl>
+    </visualization>
+
+    
+</argos-configuration>

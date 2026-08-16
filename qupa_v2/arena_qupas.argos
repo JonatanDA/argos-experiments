@@ -1,0 +1,124 @@
+<?xml version="1.0"?>
+<argos-configuration>
+  <framework>
+    <experiment length="0" ticks_per_second="10" />
+    <system threads="0" />
+  </framework>
+  <controllers>
+    <lua_controller id="lua">
+      <actuators>
+        <differential_steering implementation="default" />
+        <leds implementation="default" medium="leds" />
+      </actuators>
+      <sensors>
+        <qupa_proximity implementation="default" show_rays="true"/>
+        <colored_blob_omnidirectional_camera implementation="rot_z_only" medium="leds" show_rays="true" />
+      </sensors>
+      <params/>
+    </lua_controller>
+  </controllers>
+<arena size="20, 20, 1" center="0,0,0.5">
+<!-- LEDs para todas las paredes -->
+
+<!-- LEDs en wall_north (y=6.7, ang=0°) -->
+<light id="led_0" position="-2.25,6.7,0.7" color="green" intensity="3.0" medium="leds" />
+<light id="led_1" position="-0.75,6.7,0.7" color="blue" intensity="3.0" medium="leds" />
+<light id="led_2" position="0.75,6.7,0.7" color="blue" intensity="3.0" medium="leds" />
+<light id="led_3" position="2.25,6.7,0.7" color="green" intensity="3.0" medium="leds" />
+
+<!-- LEDs en wall_south (y=-6.7, ang=0°) -->
+<light id="led_4" position="-2.25,-6.7,0.7" color="green" intensity="3.0" medium="leds" />
+<light id="led_5" position="-0.75,-6.7,0.7" color="blue" intensity="3.0" medium="leds" />
+<light id="led_6" position="0.75,-6.7,0.7" color="blue" intensity="3.0" medium="leds" />
+<light id="led_7" position="2.25,-6.7,0.7" color="green" intensity="3.0" medium="leds" />
+
+<!-- LEDs en wall_2 (lado superior derecho, ang=-60°) -->
+<light id="led_8" position="4.4026,5.3591,0.7" color="green" intensity="3.0" medium="leds" />
+<light id="led_9" position="5.1526,4.0601,0.7" color="blue" intensity="3.0" medium="leds" />
+<light id="led_10" position="5.9026,2.7611,0.7" color="blue" intensity="3.0" medium="leds" />
+<light id="led_11" position="6.6526,1.4621,0.7" color="green" intensity="3.0" medium="leds" />
+
+<!-- LEDs en wall_4 (lado inferior derecho, ang=60°) -->
+<light id="led_12" position="4.4026,-5.3591,0.7" color="green" intensity="3.0" medium="leds" />
+<light id="led_13" position="5.1526,-4.0601,0.7" color="blue" intensity="3.0" medium="leds" />
+<light id="led_14" position="5.9026,-2.7611,0.7" color="blue" intensity="3.0" medium="leds" />
+<light id="led_15" position="6.6526,-1.4621,0.7" color="green" intensity="3.0" medium="leds" />
+
+<!-- LEDs en wall_3 (lado superior izquierdo, ang=60°) -->
+<light id="led_16" position="-6.6526,1.4621,0.7" color="green" intensity="3.0" medium="leds" />
+<light id="led_17" position="-5.9026,2.7611,0.7" color="blue" intensity="3.0" medium="leds" />
+<light id="led_18" position="-5.1526,4.0601,0.7" color="blue" intensity="3.0" medium="leds" />
+<light id="led_19" position="-4.4026,5.3591,0.7" color="green" intensity="3.0" medium="leds" />
+
+<!-- LEDs en wall_1 (lado inferior izquierdo, ang=-60°) -->
+<light id="led_20" position="-6.6526,-1.4621,0.7" color="green" intensity="3.0" medium="leds" />
+<light id="led_21" position="-5.9026,-2.7611,0.7" color="blue" intensity="3.0" medium="leds" />
+<light id="led_22" position="-5.1526,-4.0601,0.7" color="blue" intensity="3.0" medium="leds" />
+<light id="led_23" position="-4.4026,-5.3591,0.7" color="green" intensity="3.0" medium="leds" />
+
+<!-- Paredes de tu arena (sin cambios) -->
+<box id="wall_north" size="6,0.1,1.1" movable="false"> <body position="0,6.7,0" orientation="0,0,0" /> </box>
+<box id="wall_south" size="6,0.1,1.1" movable="false"> <body position="0,-6.7,0" orientation="0,0,0" /> </box>
+<box id="wall_1" size="6.0,0.1,1.1" movable="false"> <body position="-5.527660172,-3.410660172,0" orientation="-60,0,0" /> </box>
+<box id="wall_2" size="6,0.1,1.1" movable="false"> <body position="5.527660172,3.410660172,0" orientation="-60,0,0" /> </box>
+<box id="wall_3" size="6,0.1,1.1" movable="false"> <body position="-5.527660172,3.410660172,0" orientation="60,0,0" /> </box>
+<box id="wall_4" size="6,0.1,1.1" movable="false"> <body position="5.527660172,-3.410660172,0" orientation="60,0,0" /> </box>
+
+<!-- Cajas TAM (marcadores visuales/físicos) - sin cambios -->
+<!-- ... (el resto de tus cajas TAM van aquí, no es necesario copiarlas de nuevo) ... -->
+<box id="TAM_0" size="0.1,0.7,1.1" movable="false"><body position="0,6.3,0" orientation="0,0,0" /></box>
+<box id="TAM_1" size="0.1,0.7,1.1" movable="false"><body position="1.5,6.3,0" orientation="0,0,0" /></box>
+<box id="TAM_2" size="0.1,1.3,1.1" movable="false"><body position="3,6,0" orientation="0,0,0" /></box>
+<box id="TAM_3" size="0.1,0.7,1.1" movable="false"><body position="-1.5,6.3,0" orientation="0,0,0" /></box>
+<box id="TAM_4" size="0.1,1.3,1.1" movable="false"><body position="-3,6,0" orientation="0,0,0" /></box>
+<box id="TAM_5" size="0.1,0.7,1.1" movable="false"><body position="0,-6.3,0" orientation="0,0,0" /></box>
+<box id="TAM_6" size="0.1,0.7,1.1" movable="false"><body position="1.5,-6.3,0" orientation="0,0,0" /></box>
+<box id="TAM_7" size="0.1,1.3,1.1" movable="false"><body position="3,-6,0" orientation="0,0,0" /></box>
+<box id="TAM_8" size="0.1,0.7,1.1" movable="false"><body position="-1.5,-6.3,0" orientation="0,0,0" /></box>
+<box id="TAM_9" size="0.1,1.3,1.1" movable="false"><body position="-3,-6,0" orientation="0,0,0" /></box>
+<box id="TAM_10" size="0.1,0.7,1.1" movable="false"><body position="-5.244860172,-3.127860172,0" orientation="-60,0,0" /></box>
+<box id="TAM_11" size="0.1,0.7,1.1" movable="false"><body position="-4.494860172,-4.426898278,0" orientation="-60,0,0" /></box>
+<box id="TAM_12" size="0.1,2,1.1" movable="false"><body position="-3.894860172, -5.985744004, 0" orientation="-60,0,0" /></box>
+<box id="TAM_13" size="0.1,0.7,1.1" movable="false"><body position="-5.994860172,-1.828822066,0" orientation="-60,0,0" /></box>
+<box id="TAM_14" size="0.1,2,1.1" movable="false"><body position="-6.744860172,-0.5297839606,0" orientation="-60,0,0" /></box>
+<box id="TAM_15" size="0.1,0.7,1.1" movable="false"><body position="5.244860172,3.127860172,0" orientation="-60,0,0" /></box>
+<box id="TAM_16" size="0.1,0.7,1.1" movable="false"><body position="4.494860172,4.426898278,0" orientation="-60,0,0" /></box>
+<box id="TAM_17" size="0.1,1.7,1.1" movable="false"><body position="3.744860172,5.725936383,0" orientation="-60,0,0" /></box>
+<box id="TAM_18" size="0.1,0.7,1.1" movable="false"><body position="5.994860172,1.828822066,0" orientation="-60,0,0" /></box>
+<box id="TAM_19" size="0.1,1.8,1.1" movable="false"><body position="6.744860172,0.5297839606,0" orientation="-60,0,0" /></box>
+<box id="TAM_20" size="0.1,0.7,1.1" movable="false"><body position="-5.244860172,3.127860172,0" orientation="60,0,0" /></box>
+<box id="TAM_21" size="0.1,0.7,1.1" movable="false"><body position="-4.494860172,4.426898278,0" orientation="60,0,0" /></box>
+<box id="TAM_22" size="0.1,1.7,1.1" movable="false"><body position="-3.744860172,5.725936383,0" orientation="60,0,0" /></box>
+<box id="TAM_23" size="0.1,0.7,1.1" movable="false"><body position="-5.994860172,1.828822066,0" orientation="60,0,0" /></box>
+<box id="TAM_24" size="0.1,1.7,1.1" movable="false"><body position="-6.744860172,0.5297839606,0" orientation="60,0,0" /></box>
+<box id="TAM_25" size="0.1,0.7,1.1" movable="false"><body position="5.244860172,-3.127860172,0" orientation="60,0,0" /></box>
+<box id="TAM_26" size="0.1,0.7,1.1" movable="false"><body position="4.494860172,-4.426898278,0" orientation="60,0,0" /></box>
+<box id="TAM_27" size="0.1,1.7,1.1" movable="false"><body position="3.744860172,-5.725936383,0" orientation="60,0,0" /></box>
+<box id="TAM_28" size="0.1,0.7,1.1" movable="false"><body position="5.994860172,-1.828822066,0" orientation="60,0,0" /></box>
+<box id="TAM_29" size="0.1,2,1.1" movable="false"><body position="6.744860172,-0.5297839606,0" orientation="60,0,0" /></box>
+
+<distribute>
+  <position method="uniform" min="-5,-5,0" max="5,5,0" />
+  <orientation method="uniform" min="0,0,0" max="360,0,0" />
+  <entity quantity="5" max_trials="100">
+    <qupa id="q">
+      <controller config="lua" />
+    </qupa>
+  </entity>
+</distribute>
+
+</arena>
+  <physics_engines>
+    <dynamics2d id="dyn2d" />
+  </physics_engines>
+  <media>
+    <led id="leds" index="grid" grid_size="1,1,1" />
+    <range_and_bearing id="rab" index="grid" grid_size="1,1,1" />
+  </media>
+  <visualization>
+    <qt-opengl lua_editor="true">
+      <camera>
+	      <placement idx="0" position="0,0,10" look_at="0,0,0" up="3,0,0" lens_focal_length="20" />			      </camera>
+    </qt-opengl>
+  </visualization>
+</argos-configuration>

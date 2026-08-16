@@ -1,0 +1,143 @@
+<?xml version="1.0"?>
+<argos-configuration>
+    <framework>
+        <experiment 
+            length="3500" 
+            ticks_per_second="10" 
+            random_seed = "187014"
+            />
+        <system threads="0"/>
+    </framework>
+
+    <controllers>
+
+        <lua_controller id="lua">
+            <actuators>
+                <differential_steering implementation="default"/>
+                <leds implementation="default" medium="leds"/>
+                <range_and_bearing implementation="default" medium="rab"/>
+            </actuators>
+
+            <sensors>
+                <footbot_proximity implementation="default" show_rays="false"/>
+                <positioning implementation="default"/>
+                <colored_blob_omnidirectional_camera implementation="rot_z_only" show_rays="false" medium="leds"/>
+                <range_and_bearing implementation="medium" medium="rab"/>
+                <footbot_base_ground implementation="rot_z_only"/>
+                <footbot_motor_ground implementation="rot_z_only"/>
+                <footbot_light implementation="rot_z_only"/>
+            </sensors>
+
+            <params />
+        </lua_controller>
+
+        <lua_controller id="lua_dem">
+            <actuators>
+                <differential_steering implementation="default"/>
+                <leds implementation="default" medium="leds"/>
+                <range_and_bearing implementation="default" medium="rab"/>
+            </actuators>
+
+            <sensors>
+                <footbot_proximity implementation="default" show_rays="true"/>
+                <positioning implementation="default"/>
+                <colored_blob_omnidirectional_camera implementation="rot_z_only" show_rays="false" medium="leds"/>
+                <range_and_bearing implementation="medium" medium="rab"/>
+                <footbot_base_ground implementation="rot_z_only"/>
+                <footbot_motor_ground implementation="rot_z_only"/>
+                <footbot_light implementation="rot_z_only"/>
+            </sensors>
+
+            <params />
+        </lua_controller>
+
+    </controllers>
+ 
+    <arena size="10,10,5" center="0,0,0.5">
+
+    <!-- light -->
+        <!-- <light id="light"
+           position="2,2,1"
+           orientation="0,0,0"
+           color="yellow"
+           intensity="3.0"
+           medium="leds" /> -->
+
+    <!-- Floor -->
+        <floor id="floor" source="loop_functions" pixels_per_meter="100" />
+    
+        <box id="wall_north" size="8,0.1,0.5" movable="false">
+        <body position="0,4,0" orientation="0,0,0"/>
+        </box>
+        <box id="wall_south" size="8,0.1,0.5" movable="false">
+        <body position="0,-4,0" orientation="0,0,0"/>
+        </box>
+        <box id="wall_east" size="0.1,8,0.5" movable="false">
+        <body position="4,0,0" orientation="0,0,0"/>
+        </box>
+        <box id="wall_west" size="0.1,8,0.5" movable="false">
+        <body position="-4,0,0" orientation="0,0,0"/>
+        </box>        
+        
+        <!-- Footbot4 Maestro -->
+        <foot-bot id="Footbot4"> 
+        <body position="-0.6, 0 , 0" orientation="0,0,0"/>
+        <controller config="lua_dem"/>
+        </foot-bot> 
+
+        <foot-bot id="Footbot0"><body position="1.00,0.00,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot1"><body position="0.81,0.59,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot2"><body position="0.31,0.95,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot3"><body position="-0.31,0.95,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot5"> <body position="-0.81,0.59,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot6"><body position="-1.00,0.00,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot7"><body position="-0.81,-0.59,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot8"><body position="-0.31,-0.95,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot9"><body position="0.31,-0.95,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot10"><body position="0.81,-0.59,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot11"><body position="2.00,0.00,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot12"><body position="1.62,1.18,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot13"><body position="0.62,1.90,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot14"><body position="-0.62,1.90,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot15"><body position="-1.62,1.18,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot16"><body position="-2.00,0.00,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot17"><body position="-1.62,-1.18,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot18"><body position="-0.62,-1.90,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot19"><body position="0.62,-1.90,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot20"><body position="1.62,-1.18,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot21"><body position="3.00,0.00,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot22"><body position="2.43,1.76,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot23"><body position="0.93,2.85,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot24"><body position="-0.93,2.85,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot25"><body position="-2.43,1.76,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot26"><body position="-3.00,0.00,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot27"><body position="-2.43,-1.76,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot28"><body position="-0.93,-2.85,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot29"><body position="0.93,-2.85,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+        <foot-bot id="Footbot30"><body position="2.43,-1.76,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+
+    </arena>  
+
+
+    <physics_engines>
+        <dynamics2d id="dyn2d"/>
+    </physics_engines>
+
+    <media>
+        <range_and_bearing id="rab"/>
+        <led id="leds"/>
+    </media>
+
+        <!-- <user_functions library="librobot_id_qtuser_functions.so"/> -->
+    <visualization>
+    <qt-opengl lua_editor="true">
+        <camera>
+        <placements>
+            <placement index="0" position="0,0,4.34" look_at="0,0,0" up="0,1,0" lens_focal_length="12.5" />
+        </placements>
+        </camera>
+    </qt-opengl>
+    </visualization>
+
+    
+</argos-configuration>

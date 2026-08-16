@@ -1,0 +1,4 @@
+# Ignore node_modules and dependency directories
+build/
+.vscode/
+.json

@@ -1,0 +1,112 @@
+<?xml version="1.0"?>
+
+<!-- #define ARENA_SIZE 50 -->
+
+<argos-configuration>
+  <framework>
+    <experiment length="15000" ticks_per_second="10" random_seed="187014"/>
+    <system threads="0"/> 
+  </framework>
+
+  <controllers>
+    <lua_controller id="lua">
+
+      <actuators>
+        <differential_steering implementation="default"/>
+        <leds implementation="default" medium="leds"/>
+        <range_and_bearing implementation="default" medium="rab"/>
+      </actuators>
+
+      <sensors>
+        <footbot_proximity implementation="default" show_rays="false"/>
+        <positioning implementation="default"/>
+        <colored_blob_omnidirectional_camera implementation="rot_z_only" show_rays="false" medium="leds"/>
+        <range_and_bearing implementation="medium" medium="rab"/>
+        <footbot_base_ground implementation="rot_z_only"/>
+        <footbot_motor_ground implementation="rot_z_only"/>
+        <footbot_light implementation="rot_z_only"/>
+      </sensors>
+
+      <params/>
+    </lua_controller>
+  </controllers>
+
+  <arena size="50,50,5" center="0,0,0.5">
+  <!-- <arena size="20,20,5" center="0,0,0.5"> -->
+
+    <!-- light -->
+        <light id="light"
+           position="-24.5, -24.5 ,2"
+           orientation="0,0,0"
+           color="yellow"
+           intensity="1000000.0"
+           medium="leds" />
+
+    <!-- Floor 
+
+    <floor id="floor" source="loop_functions" pixels_per_meter="100"/>-->
+    <floor id="floor" source="image" path="Arena/floor_mision2.7.png"/>
+
+
+<!-- para 2.8 y 2.7 -->
+    <foot-bot id="Footbot1"><body position="0.50,0.00,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+    <foot-bot id="Footbot2"><body position="0.15,0.48,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+    <foot-bot id="Footbot3"><body position="-0.40,0.29,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+    <foot-bot id="Footbot5"><body position="-0.40,-0.29,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+    <foot-bot id="Footbot6"><body position="0.15,-0.48,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+    <foot-bot id="Footbot7"><body position="1.00,0.00,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+    <foot-bot id="Footbot8"><body position="0.31,0.95,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+    <foot-bot id="Footbot9"><body position="-0.81,0.59,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+    <foot-bot id="Footbot10"><body position="-0.81,-0.59,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+    <foot-bot id="Footbot11"><body position="0.31,-0.95,0" orientation="0,0,0"/><controller config="lua"/></foot-bot>
+
+    <!-- Footbot4 , Maestros -->
+    <foot-bot id="Footbot4">
+      <body position="1.2, 0.5 , 0" orientation="0,0,0"/>
+      <controller config="lua"/>
+    </foot-bot>
+
+    <foot-bot id="Footbot0">
+      <body position="0, 0 , 0" orientation="0,0,0"/>
+      <controller config="lua"/>
+    </foot-bot>
+<!-- 
+    <foot-bot id="Footbot0">
+      <body position="20, -10 , 0" orientation="0,0,0"/>
+      <controller config="lua"/>
+    </foot-bot> -->
+
+
+    <!-- Muros perimetrales -->
+    <box id="wall_north" size="50,0.1,0.5" movable="false"><body position="0,25,0"/></box>
+    <box id="wall_south" size="50,0.1,0.5" movable="false"><body position="0,-25,0"/></box>
+    <box id="wall_east"  size="0.1,50,0.5" movable="false"><body position="25,0,0"/></box>
+    <box id="wall_west"  size="0.1,50,0.5" movable="false"><body position="-25,0,0"/></box>
+
+    <!-- <box id="wall_north" size="20,0.1,0.5" movable="false"><body position="0, 10,0"/></box>
+    <box id="wall_south" size="20,0.1,0.5" movable="false"><body position="0,-10,0"/></box>
+    <box id="wall_east"  size="0.1,20,0.5" movable="false"><body position="10,0,0"/></box>
+    <box id="wall_west"  size="0.1,20,0.5" movable="false"><body position="-10,0,0"/></box> -->
+
+  </arena>
+
+  <physics_engines>
+    <dynamics2d id="dyn2d"/>
+  </physics_engines>
+
+  <media>
+    <led id="leds"/>
+    <range_and_bearing id="rab"/>
+  </media>
+
+  <visualization>
+    <qt-opengl lua_editor="true">
+      <camera>
+        <placements>
+          <placement index="0" position="0,0,7" look_at="0,0,0" up="0,1,0" lens_focal_length="35.5"/>
+        </placements>
+      </camera>
+    </qt-opengl>
+  </visualization>
+
+</argos-configuration>
