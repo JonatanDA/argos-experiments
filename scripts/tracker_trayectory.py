@@ -13,46 +13,46 @@ tracker_trayectoria.py
 # ---------- CONFIGURACIÓN DE VISUALIZACIÓN E INTERFAZ ----------
 # =============================================================================
 # --- Ventana Principal y Gráficas ---
-TITULO_GRAFICA                  = "Datos observados" # Título de la ventana y de la gráfica
+TITULO_GRAFICA                  = "Datos observados"# Título de la ventana y de la gráfica
 MODO                            = 1                 # 1: Mostrar toda la trayectoria, 2: Mostrar solo las últimas N muestras    
 WINDOW                          = 300               # (Aplica si MODO=2) Número de muestras a visualizar
 DEFAULT_XMIN                    = -1.5              # Límites espaciales de la gráfica
 DEFAULT_XMAX                    =  1.5
 DEFAULT_YMIN                    = -1.5
 DEFAULT_YMAX                    =  1.5
-DEAD_TIME_LIMIT                 = 0.5               # Tiempo (s) para considerar que no hay actualización de datos de un determinado robot (inactividad). 
-DELETE_ON_TIMEOUT               = False             # True: Borra trayectoria completa tras inactividad. False: Inserta None (discontinuidad).
+DEAD_TIME_LIMIT                 = 2                 # Tiempo (s) para considerar que no hay actualización de datos de un determinado robot (inactividad). 
+DELETE_ON_TIMEOUT               = True              # True: Borra trayectoria completa tras inactividad. False: Inserta None (discontinuidad).
 DEFAULT_FPS                     = 60                # Tasa de refresco de la animación
 
 # --- Etiquetas y Nombres ---
-MODO_ETIQUETAS                  = 3                 # 0: Leyenda, 1: Flotantes junto al robot, 3: Fijas en punto de inicio
+MODO_ETIQUETAS                  = 1                 # 0: Leyenda, 1: Flotantes junto al robot, 3: Fijas en punto de inicio
 PREFIX_ETIQUETAS                = "Rm"              # Prefijo para los robots (ej: "Rm" -> Rm1). Si es "", usa original.
 NOMBRE_OBSERVADOR               = "Ra"              # Nombre especial para la etiqueta del observador.
 MAX_ETIQUETAS_FIJAS             = 7                 # (Aplica si MODO_ETIQUETAS=3) Límite numérico: Ver Rm1 hasta Rm7. Usa None para sin límite.
-ELIMINAR_SUPERPUESTAS           = True              # (Aplica si MODO_ETIQUETAS=1) Elimina etiquetas encimadas. 
+ELIMINAR_SUPERPUESTAS           = False             # (Aplica si MODO_ETIQUETAS=1) Elimina etiquetas encimadas. 
 MAX_HISTORICAS_TRANSPARENTES    = 5                 # (Aplica si MODO_ETIQUETAS=1 y ELIMINAR=False) Cantidad de etiquetas viejas transparentes.
 
 # --- Representación del Observador (Cámara) ---
-MODO_CIRCULO                    = 0                 # 0: Ninguno, 1: Contorno, 2: Relleno semitransparente
-ANGULO_APERTURA                 = 73.935            # (Aplica si MODO_CIRCULO>0) Grados (omnidirectional_camera_aperture)
-ALTURA_CAMARA                   = 0.3               # (Aplica si MODO_CIRCULO>0) Altura típica de la cámara (en metros)
-
+MODO_VISUAL_OBSERVADOR          = 1                 # 0: Nada, 1: Solo punto actual y círculo, 2: Trayectoria completa con líneas
+MODO_CIRCULO                    = 2                 # 0: Ninguno, 1: Contorno, 2: Relleno semitransparente
+ANGULO_APERTURA                 = 72.800            # (Aplica si MODO_CIRCULO>0) Grados (omnidirectional_camera_aperture)
+ALTURA_CAMARA                   = 0.3               # (Aplica si MODO_CIRCULO>0) Altura típica de la cámara (en metros) Qupa: 0.245, Foot-bot: 0.3
 
 # =============================================================================
 # ---------- CONFIGURACIÓN DE GUARDADO DE DATOS ----------
 # =============================================================================
-DATA_DIR                        ="Resultados/Trayectory"# Directorio base para el guardado
+DATA_DIR                        ="Resultados/Trayectory"    # Directorio base para el guardado
 # --- Video ---
-SAVE_VIDEO  = False                                 # True: Guarda la animación en formato de video
-DEFAULT_OUTFILE                 = "trayectoria.mp4" # (Aplica si SAVE_VIDEO=True) Nombre del archivo de salida
+SAVE_VIDEO                      = True                     # True: Guarda la animación en formato de video
+DEFAULT_OUTFILE                 = "Ks1.mp4"         # (Aplica si SAVE_VIDEO=True) Nombre del archivo de salida
 # --- CSV ---
-SAVE_CSV                        = False             # True: Guarda las coordenadas en un archivo tabular
+SAVE_CSV                        = False                     # True: Guarda las coordenadas en un archivo tabular
 
 # =============================================================================
 # ---------- CONFIGURACIÓN DEL TRACKER Y SISTEMA ----------
 # =============================================================================
 # --- Identificadores y Filtros ---
-OBSERVADOR_ID                   = "Qupa400"         # ID del robot observador (Ajusta según tu parser)
+OBSERVADOR_ID                   = "Apprentice"         # ID del robot observador (Ajusta según tu parser)
 FILTRO                          = False             # True: Muestra solo los robots especificados abajo
 ROBOTS                          = "1"               # (Aplica si FILTRO=True) IDs a visualizar
 
@@ -112,7 +112,7 @@ def parse_robots_arg(s):
     parts = [p.strip() for p in s.split(',') if p.strip()]
     names = set()
     for p in parts:
-        if p.isdigit(): names.add(f"Qupa{int(p)}") # CORREGIDO: Ahora usa Qupa en lugar de Footbot
+        if p.isdigit(): names.add(f"Master{int(p)}") 
         else: names.add(p)
     return names
 
@@ -151,7 +151,6 @@ def get_display_name(name):
         return NOMBRE_OBSERVADOR
         
     if PREFIX_ETIQUETAS != "":
-        # Extraemos solo el número al final del nombre original (ej: Qupa14 -> 14)
         match = re.search(r'(\d+)$', name)
         if match:
             return f"{PREFIX_ETIQUETAS}{match.group(1)}"
@@ -196,12 +195,12 @@ def main():
     data_robots = defaultdict(lambda: {'xs': [], 'ys': []})
     name_to_color = {}
     last_seen_map = {} 
-    first_seen_positions = {}  # Guarda la coordenada de origen de cada robot
+    first_seen_positions = {}  
     next_index = 0
     
     fig_main, ax_main = plt.subplots(figsize=(7,7))
     mode_str = "Eliminar tras DeadTime" if DELETE_ON_TIMEOUT else "Romper línea tras DeadTime"
-    fig_main.canvas.manager.set_window_title(TITULO_GRAFICA) # CORREGIDO: Título de ventana dinámico
+    fig_main.canvas.manager.set_window_title(TITULO_GRAFICA)
 
     def draw_labels_clamped(ax, data_dict, xmin, xmax, ymin, ymax, is_video=False, first_pos_dict=None):
         """Dibuja etiquetas flotantes, gestiona personalización de nombres y modo de inicio fijo."""
@@ -224,12 +223,14 @@ def main():
             for i, name in enumerate(sorted_names):
                 if name not in first_pos_dict: continue
                 
-                # --- NUEVA LÓGICA: FILTRO MATEMÁTICO ESTRICTO POR NÚMERO ---
+                # Regla del observador: Si MODO_VISUAL_OBSERVADOR es 0, ocultar etiqueta también
+                if name == OBSERVADOR_ID and MODO_VISUAL_OBSERVADOR == 0:
+                    continue
+
                 if MAX_ETIQUETAS_FIJAS is not None and name != OBSERVADOR_ID:
                     match = re.search(r'(\d+)$', name)
                     if match:
                         num_robot = int(match.group(1))
-                        # Si el número (ej: 12) supera el límite (ej: 7), ignoramos dibujar esta etiqueta
                         if num_robot > MAX_ETIQUETAS_FIJAS:
                             continue
                 
@@ -243,13 +244,12 @@ def main():
                 tx_clamped = max(xmin + x_margin, min(tx, xmax - (x_margin * 6)))
                 ty_clamped = max(ymin + y_margin, min(ty, ymax - (y_margin * 2)))
 
-                # Las dibujamos estáticas (solo aquellas que pasaron el filtro)
                 ax.text(tx_clamped, ty_clamped, display_name, color=color, fontsize=9, fontweight='bold', alpha=1.0, zorder=5,
                         bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
             return
 
         # =====================================================================
-        # MODO 1: ETIQUETAS FLOTANTES JUNTO AL ROBOT (ACTUALIZADAS)
+        # MODO 1: ETIQUETAS FLOTANTES JUNTO AL ROBOT 
         # =====================================================================
         x_threshold = (xmax - xmin) * 0.06  
         y_threshold = (ymax - ymin) * 0.04  
@@ -257,6 +257,10 @@ def main():
 
         # PASO 1: Dibujar PRIMERO las etiquetas de los últimos datos
         for i, name in enumerate(sorted_names):
+            # Ocultar etiqueta si el observador está en modo 0
+            if name == OBSERVADOR_ID and MODO_VISUAL_OBSERVADOR == 0:
+                continue
+
             xs = data_dict[name]['xs']
             ys = data_dict[name]['ys']
             display_name = get_display_name(name)
@@ -288,6 +292,10 @@ def main():
         # PASO 2: Dibujar las etiquetas históricas (Rastro)
         if not ELIMINAR_SUPERPUESTAS:
             for i, name in enumerate(sorted_names):
+                # Si es el observador en modo 0 o 1, NO se dibuja rastro histórico
+                if name == OBSERVADOR_ID and MODO_VISUAL_OBSERVADOR in [0, 1]:
+                    continue
+
                 xs = data_dict[name]['xs']
                 ys = data_dict[name]['ys']
                 display_name = get_display_name(name)
@@ -351,7 +359,6 @@ def main():
             if use_filter_robots and name not in robots_filter:
                 continue
 
-            # Registramos la posición inicial absoluta si el robot es nuevo
             if name not in first_seen_positions:
                 first_seen_positions[name] = (val1, val2)
 
@@ -389,7 +396,7 @@ def main():
         ax_main.set_ylim(args.ymin, args.ymax)
         ax_main.set_xlabel('X')
         ax_main.set_ylabel('Y')
-        ax_main.set_title(TITULO_GRAFICA) # CORREGIDO: Título principal de la gráfica dinámica
+        ax_main.set_title(TITULO_GRAFICA)
         ax_main.grid(True)
 
         for i, name in enumerate(sorted(data_robots.keys())):
@@ -398,13 +405,30 @@ def main():
             display_name = get_display_name(name)
             color = name_to_color.get(name, get_color(i))
 
-            if xs and ys:
+            if not xs or not ys:
+                continue
+
+            # --- NUEVA LÓGICA DE DIBUJO PARA EL OBSERVADOR ---
+            if name == OBSERVADOR_ID:
+                if MODO_VISUAL_OBSERVADOR == 0:
+                    continue # No grafica línea ni punto
+                elif MODO_VISUAL_OBSERVADOR == 1:
+                    # Modo 1: Solo el punto más reciente, sin línea
+                    if xs[-1] is not None:
+                        ax_main.scatter([xs[-1]], [ys[-1]], s=25, color=color, label=display_name)
+                elif MODO_VISUAL_OBSERVADOR == 2:
+                    # Modo 2: Comportamiento normal (línea + punto final)
+                    ax_main.plot(xs, ys, lw=1.5, label=display_name, color=color)
+                    if xs[-1] is not None:
+                        ax_main.scatter([xs[-1]], [ys[-1]], s=25, color=color)
+            else:
+                # Comportamiento normal para el resto de los robots
                 ax_main.plot(xs, ys, lw=1.5, label=display_name, color=color)
                 if xs[-1] is not None:
                     ax_main.scatter([xs[-1]], [ys[-1]], s=25, color=color)
         
         # --- LÓGICA DEL CIRCULO DEL OBSERVADOR ---
-        if MODO_CIRCULO > 0 and OBSERVADOR_ID in data_robots:
+        if MODO_VISUAL_OBSERVADOR > 0 and MODO_CIRCULO > 0 and OBSERVADOR_ID in data_robots:
             xs_obs = data_robots[OBSERVADOR_ID]['xs']
             ys_obs = data_robots[OBSERVADOR_ID]['ys']
             if xs_obs and ys_obs and xs_obs[-1] is not None:
@@ -464,7 +488,6 @@ def main():
     else:
         names_to_plot = sorted(names_all)
 
-    # Los CSV seguirán guardándose con sus nombres limpios originales para no alterar la data
     if save_csv:
         print("\nGuardando CSV...")
         data_dir = os.path.join(os.getcwd(), DATA_DIR)
@@ -499,7 +522,6 @@ def main():
                 for frame_events in timeline:
                     for (n, x, y, ts) in frame_events:
                         if n in accum:
-                            # Registramos coordenada cero para el export de video
                             if n not in vid_first_seen_positions:
                                 vid_first_seen_positions[n] = (x, y)
 
@@ -529,13 +551,27 @@ def main():
                         display_name = get_display_name(n)
                         color = get_color(i)
                         
-                        if xs and ys:
+                        if not xs or not ys:
+                            continue
+
+                        # --- LÓGICA DE DIBUJO PARA EL OBSERVADOR EN VIDEO ---
+                        if n == OBSERVADOR_ID:
+                            if MODO_VISUAL_OBSERVADOR == 0:
+                                continue 
+                            elif MODO_VISUAL_OBSERVADOR == 1:
+                                if xs[-1] is not None:
+                                    ax_save.scatter([xs[-1]], [ys[-1]], s=25, color=color, label=display_name)
+                            elif MODO_VISUAL_OBSERVADOR == 2:
+                                ax_save.plot(xs, ys, lw=1.5, label=display_name, color=color)
+                                if xs[-1] is not None:
+                                    ax_save.scatter([xs[-1]], [ys[-1]], s=25, color=color)
+                        else:
                             ax_save.plot(xs, ys, lw=1.5, label=display_name, color=color)
                             if xs[-1] is not None:
                                 ax_save.scatter([xs[-1]], [ys[-1]], s=25, color=color)
                     
                     # --- LÓGICA DEL CÍRCULO EN EL VIDEO ---
-                    if MODO_CIRCULO > 0 and OBSERVADOR_ID in accum:
+                    if MODO_VISUAL_OBSERVADOR > 0 and MODO_CIRCULO > 0 and OBSERVADOR_ID in accum:
                         xs_obs = accum[OBSERVADOR_ID]['xs']
                         ys_obs = accum[OBSERVADOR_ID]['ys']
                         if xs_obs and ys_obs and xs_obs[-1] is not None:
@@ -549,7 +585,6 @@ def main():
                                 ax_save.add_patch(circle_fill)
                                 ax_save.add_patch(circle_line)
 
-                    # Exportando texto al video
                     draw_labels_clamped(ax_save, accum, args.xmin, args.xmax, args.ymin, args.ymax, is_video=True, first_pos_dict=vid_first_seen_positions)
 
                     writer.grab_frame()

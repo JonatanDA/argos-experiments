@@ -89,7 +89,7 @@ function step()
                 end
             else
                 if robot.id == "epuck2" or robot.id == "epuck5" or robot.id == "epuck1" then
-                    triangulo()
+                    cuadro()
                     --Ejecutar patrón 1, del demostrador  
                 else
                     triangulo()

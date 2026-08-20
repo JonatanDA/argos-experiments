@@ -1,6 +1,6 @@
 --=============================================
 --   MEJORAS :  -- Mejoras en la función move.
---              -- Mejoras en la función de selección y detección de patrones ()Multiples patrones).
+--              -- Mejoras en la función de selección y detección de patrones (Multiples patrones).
                 -- Movimmiento dinámico del observador, siguiendo el centroide de los datos del maestros activos.
 --=============================================
 -------------------------------------------------------------------------------------------------------------------------------------

@@ -8,14 +8,21 @@ run_sim.py (Modular)
 """
 
 # ---------------- CONFIGURACIÓN (modifica aquí valores por defecto) ----------------
+
+ARGOS_FILE          = "experiments/E-puck/Argos/step6.argos"   
+LUA_SCRIPT          = "experiments/E-puck/Controller/step6.lua" 
+
 # ARGOS_FILE          = "experiments/Footbot/Argos/Winfield.argos"   
 # LUA_SCRIPT          = "experiments/Footbot/Controller/J_exp1.lua" 
 
 # ARGOS_FILE          = "experiments/Qupa/Argos/St.argos"   
 # LUA_SCRIPT          = "experiments/Qupa/Controller/St10.lua" 
 
-ARGOS_FILE          = "experiments/Qupa/Argos/Ks.argos"   
-LUA_SCRIPT          = "experiments/Qupa/Controller/Tr7/Tr7.lua" 
+# ARGOS_FILE          = "experiments/Qupa/Argos/Tr.argos"   
+# LUA_SCRIPT          = "experiments/Qupa/Controller/Tr6.lua" 
+
+# ARGOS_FILE          = "experiments/Qupa/Argos/Ks.argos"   
+# LUA_SCRIPT          = "experiments/Qupa/Controller/Ks1/Ks1.lua" 
 
 USE_STDBUF          = True   
 ARGOS_CMD           = ["argos3", "-c", "temp_run.argos"]  
@@ -40,15 +47,15 @@ AUTO_STOP_ON_END    = True
 
 
 TRACKERS = [    
-    {
-        "script": "scripts/tracker_trayectory.py",
-        "args": []
-    },
+    # {
+    #     "script": "scripts/tracker_trayectory.py",
+    #     "args": []
+    # },
 
-    {
-        "script": "scripts/tracker_calidad_imitacion.py",
-        "args": []
-    },
+    # {
+    #     "script": "scripts/tracker_calidad_imitacion.py",
+    #     "args": []
+    # },
 
     # {
     #     "script": "scripts/tracker_varianza.py",
