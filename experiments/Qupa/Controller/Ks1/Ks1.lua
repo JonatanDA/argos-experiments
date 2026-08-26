@@ -1,7 +1,7 @@
 --=============================================
---   MEJORAS :  -- Uso de funciones de usuario.
-                -- Mejoras en la función Store_relative... Uso de distancia eucclidiana en vez de thresolds de angulo y distancia
-                -- Nuevo modelo de ruido: No se agrega ruido a distancia y angulo sino a la distancia euclidiana.
+--   MEJORAS :  -- Mejoras en la función move. Corrección cuando stop = true
+                -- Mejoras en los estados de active learning
+                -- 
 --=============================================
 -------------------------------------------------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------------------------------------------------
@@ -47,7 +47,7 @@ BASE_RESTORE        = 200       -- Paciencia base a restaurar con datos refinado
 back_threshold        = 25      -- Distancia que retrocede el apprentice para evitar colisión. cm.
 front_threshold       = 25      -- Limite de distancia minima entre un objeto detectado y el apprentice para entrar a evadirlo
 max_tracking_distance = 25      -- Máxima distancia a la que se puede alejar el centroide antes de que el apprentice se acerque para no perder de vista. cm
-porcentaje            = 0.5     -- 1 < porcentaje < 0.33 , indica que tanto el apprentice busca acercarse al maestro cuando este cruza el max_tracking_distance.
+porcentaje            = 0.9     -- 1 < porcentaje < 0.33 , indica que tanto el apprentice busca acercarse al maestro cuando este cruza el max_tracking_distance.
 
 --
 distance_treshold   = 3*(speed_dem+d_speed)/ticks_per_second    -- Sensibilidad del apprentice a caambios en los puntos obtenidos del maestro durante la etapa de observación.
@@ -156,17 +156,15 @@ function Print_tracker_trayectory_data(k, x, y,logging)
         end
 
     elseif type(k) == "string" then
-
         -- Obtener el vector de posición inicial
         local x = robot.positioning.position.x
         local y = robot.positioning.position.y
 
         if displayed_data == 2 or displayed_data == 3 then
-            if robot.id == "Qupa4" then
-    
+            if k == "Qupa4" then
                 print("Apprentice & " .. x .. " , " .. y)  -- Imprime los datos globales del movimiento del Observador
-            else     
-                --print(robot.id .. " & " .. x .. " , " .. y)  
+            elseif k == "App" then
+                print("Ra".. " & " .. x .. " , " .. y)  
             end
         end
     end
@@ -254,6 +252,7 @@ end
 timer = 1
 function step()
 
+    if robot.id == "Qupa4" then print("Timer="..timer) end
     if is_master == 1 then
         master() -- Ejecutar si es master
     else
@@ -419,7 +418,7 @@ function Ejecutar_comportamiento(params_P)
     -- =========================================================================
     -- LÓGICA DE PAUSA INTELIGENTE
     -- =========================================================================
-    if SMART_MASTERS then
+    if SMART_MASTERS and robot.id ~= "Qupa4" then
         -- Si hay un obstáculo cerca en el cono frontal
         if prox[1] > 0.8 then 
             master_paused = true
@@ -438,7 +437,10 @@ function Ejecutar_comportamiento(params_P)
 
                 -- Solo avanzamos la lógica del patrón si NO estamos pausados
                 if not master_paused then
-                    Print_tracker_trayectory_data(robot.id, 0, 0)
+                    if robot.id == "Qupa4" then 
+
+                        Print_tracker_trayectory_data("App", 0, 0) 
+                    end
                     setleds("yellow")
 
                     -- c1 == 2 indica que el segmento terminó con éxito dentro de move()
@@ -674,6 +676,13 @@ function process_single_observation(k, track)
     end
 end
 
+-- Función para normalizar ángulos entre -PI y PI y evitar que 
+-- srt_ang_mark_ant crezca infinitamente tras muchas correcciones
+function normalize_angle_rad(ang)
+    while ang > math.pi do ang = ang - 2 * math.pi end
+    while ang <= -math.pi do ang = ang + 2 * math.pi end
+    return ang
+end
 -- ============================================================================
 -- [SECCIÓN 6] BUCLE PRINCIPAL DEL OBSERVADOR (TICK A TICK)
 -- ============================================================================
@@ -684,6 +693,7 @@ function store_relative_positions()
     check_patience_and_reconstruct()
 
     local proximity = proximidad()
+    --log("Proximidad: " .. string.format("%.2f", proximity[1]) .. " | Ángulo: " .. string.format("%.2f", proximity[2]))
     if proximity[1] < 1 then srt_c1 = 0 else
         if srt_c1 == 5 * ticks_per_second then resetOBS() return end
         srt_c1 = srt_c1 + 1
@@ -692,7 +702,7 @@ function store_relative_positions()
     Temporizador_1(20) 
     if temp == false then robot.leds.set_all_colors("black") end
     
--- =========================================================================
+    -- =========================================================================
     -- FASE 0: EJECUCIÓN DE ODOMETRÍA, OBSTÁCULOS Y SUPERVIVENCIA (SP)
     -- =========================================================================
     if motion_active then
@@ -719,10 +729,10 @@ function store_relative_positions()
             -- [ACCIÓN DRÁSTICA SP]: Si esperamos demasiado y el objeto no se quita
             if current_wait_ticks > MAX_WAIT_TICKS then
                 -- 1. Abortamos el movimiento actual
-                srt_ang_mark_ant = move_angle + srt_ang_mark_ant
+                srt_ang_mark_ant = normalize_angle_rad(move_angle + srt_ang_mark_ant)
                 x_ant_r = x_mark
                 y_ant_r = y_mark
-                c1 = 0; c2 = 0
+                r_move() -- <--- LIMPIEZA TOTAL AQUÍ
                 robot.wheels.set_velocity(0, 0)
                 
                 -- 2. Lanzamos movimiento de supervivencia opuesto al objeto
@@ -734,7 +744,7 @@ function store_relative_positions()
                 local msg = string.format("EVADIENDO OBJETO FÍSICO | %s | Intensidad SP: %.2f", 
                     (escape_dir > 0 and "Avanzando" or "Retrocediendo"), prox_data[1])
                 change_al_state("EVASION_SP", msg)
-                r_move()
+                -- Aquí asumo que después el loop llamará a move() normalmente
             end
         else
             current_wait_ticks = 0
@@ -791,14 +801,14 @@ function store_relative_positions()
             y_mark = y_new_r + y_ant_r
             
             if c1 == 2 then 
-                srt_ang_mark_ant = move_angle + srt_ang_mark_ant
+                srt_ang_mark_ant = normalize_angle_rad(move_angle + srt_ang_mark_ant)
                 x_ant_r = x_mark
                 y_ant_r = y_mark
                 motion_active = false
                 current_wait_ticks = 0 
-                c1 = 0; c2 = 0
+                r_move() -- <--- LIMPIEZA TOTAL AL FINALIZAR
                 robot.wheels.set_velocity(0, 0)
-                change_al_state("IDLE", "") -- Finaliza el estado correctamente
+                change_al_state("IDLE", "") 
             end
         else
             x_mark = x_ant_r
@@ -956,11 +966,11 @@ function store_relative_positions()
 
             -- [NUEVO] INTERRUPCIÓN DE EMERGENCIA (Prioridad Evasión Master Visión)
             if closest_master_dist < front_threshold and motion_active and al_current_state == "PERSIGUIENDO_CENTROIDE" then
-                srt_ang_mark_ant = move_angle + srt_ang_mark_ant
+                srt_ang_mark_ant = normalize_angle_rad(move_angle + srt_ang_mark_ant)
                 x_ant_r = x_mark
                 y_ant_r = y_mark
                 motion_active = false
-                c1 = 0; c2 = 0
+                r_move()  -- <--- LIMPIEZA TOTAL POR ABORTO DE EMERGENCIA
                 robot.wheels.set_velocity(0, 0)
                 change_al_state("IDLE", "") -- Forzamos el IDLE temporal para detonar la evasión abajo
             end
@@ -1083,410 +1093,6 @@ function store_relative_positions()
     end 
 end
 
--- -- ============================================================================
--- -- [SECCIÓN 6] BUCLE PRINCIPAL DEL OBSERVADOR (TICK A TICK)
--- -- ============================================================================
--- srt_c1 = 0
--- function store_relative_positions()
-
---     Print_tracker_trayectory_data("Qupa4", 0, 0)    
-
---     local proximity = proximidad()
---     if proximity[1] < 1 then srt_c1 = 0 else
---         if srt_c1 == 5 * ticks_per_second then resetOBS() return end
---         srt_c1 = srt_c1 + 1
---     end
-
---     Temporizador_1(20) 
---     if temp == false then robot.leds.set_all_colors("black") end
-    
---     -- =========================================================================
---     -- FASE 0: EJECUCIÓN DE ODOMETRÍA, OBSTÁCULOS Y SUPERVIVENCIA (SP)
---     -- =========================================================================
---     if motion_active then
---         local prox_data = proximidad() 
---         obs_stop_flag = false
-
---         local is_object_critical = (prox_data[1] > SP_CRITICAL_THRESHOLD)
---         local evadiendo_hacia_atras = (last_motion_marker[1] < 0)
-
---         if is_object_critical then
---             -- [NUEVO REFLEJO] Si un objeto se acerca mucho y NO estamos huyendo de él, interrumpimos todo YA.
---             if al_current_state ~= "EVASION_SP" then
---                 -- Abortamos la misión actual inmediatamente
---                 srt_ang_mark_ant = move_angle + srt_ang_mark_ant
---                 x_ant_r = x_mark
---                 y_ant_r = y_mark
---                 c1 = 0; c2 = 0
---                 robot.wheels.set_velocity(0, 0)
-                
---                 -- Decidimos la ruta de escape en dirección OPUESTA al impacto
---                 local escape_dir = (math.abs(prox_data[2]) <= 90) and -1 or 1
---                 last_motion_marker = {escape_dir * back_threshold * porcentaje, 0}
---                 current_wait_ticks = 0
---                 obs_stop_flag = false
-                
---                 local msg = string.format("EVADIENDO OBJETO FÍSICO | %s | Intensidad SP: %.2f", 
---                     (escape_dir > 0 and "Avanzando" or "Retrocediendo"), prox_data[1])
---                 change_al_state("EVASION_SP", msg, "Interrupción de emergencia por impacto inminente (SP)")
---                 r_move()
---             else
---                 -- Si YA estamos en estado de supervivencia, aplicamos la parada táctica para no chocar al huir
---                 if evadiendo_hacia_atras then
---                     if math.abs(prox_data[2]) >= 135 then obs_stop_flag = true end
---                 else
---                     if math.abs(prox_data[2]) <= 45 then obs_stop_flag = true end
---                 end
---             end
---         end
-
---         -- Contador de espera y reevaluación si estamos bloqueados
---         if obs_stop_flag then
---             current_wait_ticks = current_wait_ticks + 1
-            
---             if current_wait_ticks > MAX_WAIT_TICKS then
---                 srt_ang_mark_ant = move_angle + srt_ang_mark_ant
---                 x_ant_r = x_mark
---                 y_ant_r = y_mark
---                 c1 = 0; c2 = 0
---                 robot.wheels.set_velocity(0, 0)
-                
---                 local escape_dir = evadiendo_hacia_atras and 1 or -1
---                 last_motion_marker = {escape_dir * back_threshold * porcentaje, 0}
---                 current_wait_ticks = 0
---                 obs_stop_flag = false
-                
---                 local msg = string.format("EVADIENDO OBJETO FÍSICO | %s | Intensidad SP: %.2f", 
---                     (escape_dir > 0 and "Avanzando" or "Retrocediendo"), prox_data[1])
---                 change_al_state("EVASION_SP", msg, "Tiempo de espera agotado frente a obstáculo (SP)")
---                 r_move()
---             end
---         else
---             current_wait_ticks = 0
---         end
-
---         move(last_motion_marker[1], last_motion_marker[2], d_speed, 80, false, robot.id, obs_stop_flag)
---     else
---         current_wait_ticks = 0 
---     end
-
---     if robot.colored_blob_omnidirectional_camera then               
-        
---         local blobs         = robot.colored_blob_omnidirectional_camera
---         local yellow_blobs  = {} 
---         local green_blobs   = {}  
---         local count         = 0   
-
---         local noise_cfg = {
---             ENABLE_NOISE           = ENABLE_NOISE,
---             USE_OUTLIERS           = USE_OUTLIERS,              OUTLIER_PROB        = OUTLIER_PROB,
---             USE_DISTANCE_DEPENDENT = USE_DISTANCE_DEPENDENT,    NOISE_LEVEL_DIST    = NOISE_LEVEL_DIST,
---             USE_ANGLE_NOISE        = USE_ANGLE_NOISE,           NOISE_LEVEL_ANGLE   = NOISE_LEVEL_ANGLE,
---             USE_BIAS               = USE_BIAS,                  BIAS_OFFSET         = BIAS_OFFSET
---         }
-
---         -- =========================================================================
---         -- FASE A: Recolección y Ruido
---         -- =========================================================================
---         for i, blob in ipairs(blobs) do
---             local raw_angle = blob.angle * (180 / math.pi)
---             local raw_dist = blob.distance
---             local noisy_dist, noisy_angle = NoiseManager.aplicar_ruido(raw_dist, raw_angle, noise_cfg) 
---             local r, g, b = blob.color.red, blob.color.green, blob.color.blue
-
---             if r > 200 and g > 200 and b < 100 then table.insert(yellow_blobs, {angle = noisy_angle, distance = noisy_dist, type = 2})
---             elseif r < 100 and g > 200 and b < 100 then table.insert(green_blobs, {angle = noisy_angle, distance = noisy_dist})
---             elseif  r > 200 and g < 100 and b < 100 then table.insert(yellow_blobs, {angle = noisy_angle, distance = noisy_dist, type = 1})
---             end 
---         end
-
---         local updated_anterior_indices = {}
---         local matched_new_indices = {}
---         local fallos_maestros = {}
-
---         -- =========================================================================
---         -- FASE A.5: CORRECCIÓN DE ODOMETRÍA DEL APRENDIZ ANTES DEL MATCHING
---         -- =========================================================================
---         if motion_active then
---             local ang_total_1_rad = move_angle + srt_ang_mark_ant 
---             local x_new_r, y_new_r = math_helper.polarACartesianoPAR(move_distance, ang_total_1_rad)
-            
---             x_mark = x_new_r + x_ant_r
---             y_mark = y_new_r + y_ant_r
-            
---             if c1 == 2 then 
---                 srt_ang_mark_ant = move_angle + srt_ang_mark_ant
---                 x_ant_r = x_mark
---                 y_ant_r = y_mark
---                 motion_active = false
---                 current_wait_ticks = 0 
---                 c1 = 0; c2 = 0
---                 robot.wheels.set_velocity(0, 0)
---                 change_al_state("IDLE", "", "Movimiento completado exitosamente") 
---             end
---         else
---             x_mark = x_ant_r
---             y_mark = y_ant_r
---         end
-        
---         -- Pre-calculamos el offset global
---         local obs_ang_offset_global = srt_ang_mark_ant + (motion_active and move_angle or 0)
-
---         -- =========================================================================
---         -- FASE B: ACTUALIZACIÓN DE MAESTROS EXISTENTES
---         -- =========================================================================
---         local candidatos = {}
-
---         for j, new_data in ipairs(yellow_blobs) do
---             local ang_total_blob = (new_data.angle * (math.pi/180)) + obs_ang_offset_global
---             local bx_rel, by_rel = math_helper.polarACartesianoPAR(new_data.distance, ang_total_blob)
---             local bx_global = bx_rel + x_mark
---             local by_global = by_rel + y_mark
-            
---             for k, anterior_data in pairs(srt_anterior_data) do
---                 if anterior_data.angle and master_tracking[k] and #master_tracking[k].raw_x > 0 then
---                     local num_pts = #master_tracking[k].raw_x
---                     local mx_global = master_tracking[k].raw_x[num_pts]
---                     local my_global = master_tracking[k].raw_y[num_pts]
-                    
---                     local error_dist = math.sqrt((bx_global - mx_global)^2 + (by_global - my_global)^2)
-                    
---                     if error_dist <= distance_treshold then
---                         table.insert(candidatos, {blob_idx = j, master_idx = k, error = error_dist})
---                     end
---                 end
---             end
---         end
-
---         table.sort(candidatos, function(a, b) return a.error < b.error end)
-
---         for _, cand in ipairs(candidatos) do
---             local j = cand.blob_idx
---             local k = cand.master_idx
-            
---             if not matched_new_indices[j] and not updated_anterior_indices[k] then
---                 srt_anterior_data[k].angle = yellow_blobs[j].angle
---                 srt_anterior_data[k].distance = yellow_blobs[j].distance
---                 srt_anterior_data[k].type = yellow_blobs[j].type 
-                
---                 fallos_maestros[k] = nil 
---                 updated_anterior_indices[k] = true
---                 matched_new_indices[j] = true
---                 count = count + 1
---             end
---         end
-
---         for k, anterior_data in pairs(srt_anterior_data) do
---             if anterior_data.angle and not updated_anterior_indices[k] and master_tracking[k] and #master_tracking[k].raw_x > 0 then
---                 local num_pts = #master_tracking[k].raw_x
---                 local mx_global = master_tracking[k].raw_x[num_pts]
---                 local my_global = master_tracking[k].raw_y[num_pts]
-                
---                 local distancias_sobrantes = {}
-                
---                 for j, new_data in ipairs(yellow_blobs) do
---                     if not matched_new_indices[j] then
---                         local ang_total_blob = (new_data.angle * (math.pi/180)) + obs_ang_offset_global
---                         local bx_rel, by_rel = math_helper.polarACartesianoPAR(new_data.distance, ang_total_blob)
---                         local bx_global = bx_rel + x_mark
---                         local by_global = by_rel + y_mark
-                        
---                         local error_dist = math.sqrt((bx_global - mx_global)^2 + (by_global - my_global)^2)
---                         table.insert(distancias_sobrantes, string.format("%.2f cm", error_dist))
---                     end
---                 end
-
---                 local msg_razon = string.format("Ningún blob válido a menos de %.2f cm.", distance_treshold)
---                 if #distancias_sobrantes > 0 then
---                     msg_razon = msg_razon .. " Blobs sobrantes a: " .. table.concat(distancias_sobrantes, " | ")
---                 else
---                     msg_razon = msg_razon .. " No se detectaron blobs sobrantes."
---                 end
---                 fallos_maestros[k] = msg_razon
---             end
---         end
-
---         -- =========================================================================
---         -- FASE C: CREAR NUEVOS MAESTROS
---         -- =========================================================================
---         for j, new_data in ipairs(yellow_blobs) do
---             if not matched_new_indices[j] then
---                 table.insert(srt_anterior_data, {angle = new_data.angle, distance = new_data.distance, type = new_data.type or 2})
---                 local new_k = #srt_anterior_data
---                 updated_anterior_indices[new_k] = true
---                 initialize_master_tracking(new_k, new_data.angle, new_data.distance, srt_anterior_data[new_k].type)
---             end
---         end
-
---         -- =========================================================================
---         -- FASE D: PROCESAR BLOBS VERDES
---         -- =========================================================================
---         for _, green_blob in ipairs(green_blobs) do
---             local ang_total_green = (green_blob.angle * (math.pi/180)) + obs_ang_offset_global
---             local gbx_rel, gby_rel = math_helper.polarACartesianoPAR(green_blob.distance, ang_total_green)
---             local gbx = gbx_rel + x_mark
---             local gby = gby_rel + y_mark
-            
---             for k, master_data in pairs(srt_anterior_data) do
---                 if master_data.angle and not updated_anterior_indices[k] and master_tracking[k] and #master_tracking[k].raw_x > 0 then 
---                     local num_pts = #master_tracking[k].raw_x
---                     local mx = master_tracking[k].raw_x[num_pts]
---                     local my = master_tracking[k].raw_y[num_pts]
-                    
---                     local dist_error = math.sqrt((gbx - mx)^2 + (gby - my)^2)
-                    
---                     if dist_error <= distance_treshold then
---                         srt_anterior_data[k].type = 3 
---                         updated_anterior_indices[k] = true 
---                         master_tracking[k].End_of_pattern_detected = true
---                         break 
---                     end
---                 end
---             end 
---         end
-
---         -- =========================================================================
---         -- FASE E: CÁLCULO DEL CENTROIDE Y DECISIÓN DE MOVIMIENTO (ACTIVE LEARNING)
---         -- =========================================================================
---         local active_count = 0
---         local sum_x, sum_y = 0, 0
---         local closest_master_dist = 999999 
---         local angle_of_closest = 0
-
---         for k, data in pairs(srt_anterior_data) do
---             if updated_anterior_indices[k] and data.angle and data.distance then
---                 local mx, my = math_helper.polarACartesianoPAR(data.distance, data.angle * (math.pi/180))
---                 sum_x = sum_x + mx
---                 sum_y = sum_y + my
---                 active_count = active_count + 1
-
---                 if data.distance < closest_master_dist then
---                     closest_master_dist = data.distance
---                     angle_of_closest = data.angle
---                 end
---             end
---         end
-
---         if active_count > 0 and ENABLE_ACTIVE_LEARNING then
---             local centroid_x = sum_x / active_count
---             local centroid_y = sum_y / active_count
---             local centroid_dist, centroid_angle_rad = math_helper.cartesianoAPolarPAR(centroid_x, centroid_y)
---             local centroid_angle = centroid_angle_rad * (180 / math.pi)
-
---             if AL_LOG_MODE == 2 then
---                 log(string.format("[ACTIVE LEARNING] Centroide(%.1f) | Activos: %d | Cerca: %.1f cm", 
---                     centroid_dist, active_count, closest_master_dist))
---             end
-
---             -- INTERRUPCIÓN: Si estamos persiguiendo al centroide y se cruza un maestro (Visión)
---             if closest_master_dist < front_threshold and motion_active and al_current_state == "PERSIGUIENDO_CENTROIDE" then
---                 srt_ang_mark_ant = move_angle + srt_ang_mark_ant
---                 x_ant_r = x_mark
---                 y_ant_r = y_mark
---                 motion_active = false
---                 c1 = 0; c2 = 0
---                 robot.wheels.set_velocity(0, 0)
---                 change_al_state("IDLE", "", "Interrumpido visualmente por maestro en ruta (Cámara)")
---             end
-
---             -- DECISIONES TÁCTICAS
---             if not motion_active then
---                 if closest_master_dist < front_threshold then
---                     motion_active = true
-                    
---                     local diff_ang = centroid_angle - angle_of_closest
---                     if diff_ang > 180 then diff_ang = diff_ang - 360 end
---                     if diff_ang < -180 then diff_ang = diff_ang + 360 end
-                    
---                     local safe_angle = 0
---                     local msg_evasion = ""
-                    
---                     if math.abs(diff_ang) < 60 then 
---                         safe_angle = (diff_ang >= 0) and (angle_of_closest + 60) or (angle_of_closest - 60)
---                         msg_evasion = string.format("EVADIENDO MASTER | Rodeando obstáculo visual hacia %.1f° | Dist: %.1f cm", safe_angle, closest_master_dist)
---                     else
---                         safe_angle = centroid_angle
---                         msg_evasion = string.format("EVADIENDO MASTER | Ruta al centroide libre (%.1f°) | Dist: %.1f cm", safe_angle, closest_master_dist)
---                     end
-                    
---                     last_motion_marker = {back_threshold * porcentaje, safe_angle}
---                     change_al_state("EVADIENDO_MASTER", msg_evasion, nil)
---                     r_move()
-
---                 elseif centroid_dist > max_tracking_distance then
---                     motion_active = true
---                     last_motion_marker = {centroid_dist * porcentaje, centroid_angle}
---                     local msg_perseguir = string.format("PERSIGUIENDO CENTROIDE | Distancia: %.1f cm | Ángulo: %.1f°", centroid_dist, centroid_angle)
---                     change_al_state("PERSIGUIENDO_CENTROIDE", msg_perseguir, nil)
---                     r_move()
---                 end
---             end
---         end
-
---         -- =========================================================================
---         -- FASE G: Gestión de Pérdidas y Procesamiento de Rutas
---         -- =========================================================================
---         for k = 1, #srt_anterior_data do
---             local track = master_tracking[k]
---             local is_lost = (srt_anterior_data[k] and srt_anterior_data[k].angle and not updated_anterior_indices[k])
---             local is_finished = track and track.End_of_pattern_detected
-            
---             if is_lost then
---                 if SRP_LOG_MODE == 1 or  SRP_LOG_MODE == 3 then
---                     local razon = fallos_maestros[k] or "Sin blobs amarillos cerca."
---                     log("\n[!] Maestro " .. k .. " PERDIDO. Razón: " .. razon)
---                 end
---             end
-            
---             if (is_lost or is_finished) and track and not track.processed then
---                 process_single_observation(k, track)
---                 track.processed = true
---                 srt_anterior_data[k].angle = nil
---                 srt_anterior_data[k].distance = nil
---                 srt_anterior_data[k].type = nil
---             end
---         end
-
---         -- =========================================================================
---         -- FASE H: Grabación Continua de Datos (Compensada por movimiento)
---         -- =========================================================================
---         for k, _ in pairs(updated_anterior_indices) do
---             local master_data = srt_anterior_data[k]
---             local track = master_tracking[k]
-
---             if master_data and track and not track.processed then
---                 local current_distance = master_data.distance
---                 local current_angle_rad = master_data.angle * (math.pi / 180) 
---                 local ty = master_data.type
-                
---                 local ang_total = current_angle_rad + obs_ang_offset_global
---                 local x_new, y_new = math_helper.polarACartesianoPAR(current_distance, ang_total)
-                
---                 local x_original = x_new + x_mark
---                 local y_original = y_new + y_mark
-
---                 local num_puntos = #track.raw_x
---                 if num_puntos > 0 then
---                     local prev_x = track.raw_x[num_puntos]
---                     local prev_y = track.raw_y[num_puntos]
---                     local dist_p2p = math.sqrt((x_original - prev_x)^2 + (y_original - prev_y)^2)
-                    
---                     if SRP_LOG_MODE == 2 or  SRP_LOG_MODE == 3 then 
---                         log(string.format("maestro %d: distancia entre anterior (x,y) y nuevo punto (x,y): %.2f cm", k, dist_p2p)) 
---                     end
---                 end
-
---                 local print_x = x_original / 100
---                 local print_y = y_original / 100
---                 Print_tracker_trayectory_data(k, print_x, print_y, false)
-
---                 process_master_segmentation(k, track, x_original, y_original, ty)
---             end
---         end
---     end 
-
---     check_patience_and_reconstruct()
--- end
 -------------------------------------------------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------------------------------------------------
@@ -1797,7 +1403,6 @@ actual_dis_ticks    = 0
 
 angle_ticks_needed  = 0
 actual_ang_ticks    = 0
-t1                  = 0
 
 time_needed         = 0
 speed               = d_speed
@@ -1827,8 +1432,32 @@ function move(distance, target_angle, speed_d, speed_g, imprimir, name, stop)
     local stop = stop or false
     
     if stop then 
-        angle_ticks_needed = angle_ticks_needed + 1
-        ticks_needed = ticks_needed + 1
+        -- Actualizar la odometría del último tick que se ejecutó físicamente
+        if c1 == 0 then
+            if target_angle > 0 then
+                if actual_ang_ticks <= full_ticks_a then
+                    move_angle = (1 / ticks_per_second) * actual_ang_ticks * omega_rad
+                else
+                    move_angle = (1 / ticks_per_second) * full_ticks_a * omega_rad + (1 / ticks_per_second) * (actual_ang_ticks - full_ticks_a) * rem_omega_rad
+                end
+            else
+                if actual_ang_ticks <= full_ticks_a then
+                    move_angle = -(1 / ticks_per_second) * actual_ang_ticks * omega_rad
+                else
+                    move_angle = -((1 / ticks_per_second) * full_ticks_a * omega_rad + (1 / ticks_per_second) * (actual_ang_ticks - full_ticks_a) * rem_omega_rad)
+                end
+            end
+            angle_ticks_needed = angle_ticks_needed + 1
+
+        elseif c1 == 1 then
+            if actual_dis_ticks <= full_ticks_d then
+                move_distance = (1 / ticks_per_second) * speed_d * actual_dis_ticks * move_controller
+            else
+                move_distance = ((1 / ticks_per_second) * speed_d * full_ticks_d + (1 / ticks_per_second) * rem_speed_d * (actual_dis_ticks - full_ticks_d)) * move_controller
+            end
+            ticks_needed = ticks_needed + 1
+        end
+
         robot.wheels.set_velocity(0,0)
     else
         if temp_2 == false then
@@ -1950,6 +1579,9 @@ function move(distance, target_angle, speed_d, speed_g, imprimir, name, stop)
                         move_angle = -((1 / ticks_per_second) * full_ticks_a * omega_rad + (has_rem_a and (1 / ticks_per_second) * rem_omega_rad or 0))
                     end
                 end
+                -- if robot.id == "Qupa4" then
+                --     log("Ángulo recorrido: " .. string.format("%.2f", move_angle * (180 / math.pi)) .. "°")
+                -- end
             end
 
             -- ===============================
@@ -2027,6 +1659,10 @@ function move(distance, target_angle, speed_d, speed_g, imprimir, name, stop)
                         log(" ------------------------------------------------------ \n\n ")
                     end
                 end
+                -- if robot.id == "Qupa4" then
+                --     log("Distancia recorrida: " .. string.format("%.2f", move_distance) .. " cm")
+                -- end
+
             end
 
             if c1 == 2 then    
@@ -2176,8 +1812,6 @@ function r_move()
     angle_ticks_needed  = 0
     actual_ang_ticks    = 0
 
-    t1                  = 0
-
     time_needed         = 0
     speed               = d_speed
 
@@ -2189,6 +1823,13 @@ function r_move()
 
     previous_speed_d    = nil
     stop = false
+
+    -- Variables residuales de Store_relative_position
+    full_ticks_a        = 0
+    has_rem_a           = false
+    full_ticks_d        = 0
+    has_rem_d           = false
+    
 end
 
 --Funcion para hacer una espera

@@ -35,7 +35,7 @@ g_speed = 8
 perm1c = 40
 perm2c = 40
 
-permt = 90
+permt = 25
 
 -----------------------------
 valor1 = 0

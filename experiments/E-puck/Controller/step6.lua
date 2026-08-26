@@ -1,10 +1,15 @@
 -- Variable global
 
--- 187014    semilla 1er exp. FOOT
 -- 721549    semilla 1er exp. epuck
+-- 187014    semilla 1er exp. FOOT
 
+-- Activar para epuck
 demostrador_threshold = 12
 threshold = 10
+
+-- Activar para footbot
+-- demostrador_threshold = 32
+-- threshold = 30
 
 valor1 = 0
 valor2 = 0

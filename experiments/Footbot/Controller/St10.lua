@@ -155,19 +155,19 @@ function demostrador()
             --log("Patron 2( Cuadro) ejecutandose")
             Patron_Original{
                     params = {
-                        -- { l1,  95 },
-                        -- { l1, -45 },
-                        -- { l2, -45 },
-                        -- { l1,  45 },
-                        -- { l1,  45 },
-                        -- { l1,  90 },
-                        -- { l1,  45 },
-                        -- { l2,  45 },
-                        -- { l1, -45 },
-                        -- { l1, -45 },
-                    { 3*slide2, 90 },
-                    { 3*slide2, 120 },
-                    { 1*slide2, 15 },
+                        { l1,  95 },
+                        { l1, -45 },
+                        { l2, -45 },
+                        { l1,  45 },
+                        { l1,  45 },
+                        { l1,  90 },
+                        { l1,  45 },
+                        { l2,  45 },
+                        { l1, -45 },
+                        { l1, -45 },
+                    -- { 3*slide2, 90 },
+                    -- { 3*slide2, 120 },
+                    -- { 1*slide2, 15 },
                     },
                 name = "L"
             }
@@ -209,6 +209,7 @@ function observador()
             create_params(distancias_a_recorrer, angles_a_recorrer)
             -- log(c4)
         elseif c4 == 7 then
+            --setleds(("black"))
             patron_imitado(params)
         end
         --log("analizando movimiento por ".. robot.id)
@@ -355,7 +356,7 @@ function Patron_Original(p)
     local params    = p.params
     local name      = p.name 
     local prox = proximidad(p)
-    log("prox[1]: "..prox[1]..", prox[2]: "..prox[2]..", "..robot.id)
+    --log("prox[1]: "..prox[1]..", prox[2]: "..prox[2]..", "..robot.id)
 
     if prox[1] < 0.9 and  k == 0 then
 
@@ -426,9 +427,9 @@ function patron_imitado(params_P)
     local prox = proximidad()
     --log("prox[1]: "..prox[1]..", prox[2]: "..prox[2]..", "..robot.id)
 
-    if prox[1] <= 0.5 then
+    if prox[1] <= 0.9 then
         PI_c1 = 1
-    elseif prox[1] > 0.5 and  prox[2] >= -90 and  prox[2] <= 90 then 
+    elseif prox[1] > 0.9 and  prox[2] >= -90 and  prox[2] <= 90 then 
         PI_c1 = 0
         k = 1
         setleds("black")

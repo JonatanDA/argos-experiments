@@ -9,9 +9,6 @@ run_sim.py (Modular)
 
 # ---------------- CONFIGURACIÓN (modifica aquí valores por defecto) ----------------
 
-ARGOS_FILE          = "experiments/E-puck/Argos/step6.argos"   
-LUA_SCRIPT          = "experiments/E-puck/Controller/step6.lua" 
-
 # ARGOS_FILE          = "experiments/Footbot/Argos/Winfield.argos"   
 # LUA_SCRIPT          = "experiments/Footbot/Controller/J_exp1.lua" 
 
@@ -19,10 +16,10 @@ LUA_SCRIPT          = "experiments/E-puck/Controller/step6.lua"
 # LUA_SCRIPT          = "experiments/Qupa/Controller/St10.lua" 
 
 # ARGOS_FILE          = "experiments/Qupa/Argos/Tr.argos"   
-# LUA_SCRIPT          = "experiments/Qupa/Controller/Tr6.lua" 
+# LUA_SCRIPT          = "experiments/Qupa/Controller/Tr7/Tr7.lua" 
 
-# ARGOS_FILE          = "experiments/Qupa/Argos/Ks.argos"   
-# LUA_SCRIPT          = "experiments/Qupa/Controller/Ks1/Ks1.lua" 
+ARGOS_FILE          = "experiments/Qupa/Argos/Ks.argos"   
+LUA_SCRIPT          = "experiments/Qupa/Controller/Ks1/Ks1.lua" 
 
 USE_STDBUF          = True   
 ARGOS_CMD           = ["argos3", "-c", "temp_run.argos"]  
@@ -42,20 +39,21 @@ OUTPUT_FILE_NAME    = "j1.txt"
 
 END_PATTERN         = "End_simulation" 
 AUTO_STOP_ON_END    = True 
+#MAX_IDLE_TIME = 120 # Segundos permitidos de silencio absoluto antes de matar un proceso
 
 # Agrega aquí todos los scripts que necesiten leer la salida de ARGoS
 
 
 TRACKERS = [    
-    # {
-    #     "script": "scripts/tracker_trayectory.py",
-    #     "args": []
-    # },
+    {
+        "script": "scripts/tracker_trayectory.py",
+        "args": []
+    },
 
-    # {
-    #     "script": "scripts/tracker_calidad_imitacion.py",
-    #     "args": []
-    # },
+    {
+        "script": "scripts/tracker_calidad_imitacion.py",
+        "args": []
+    },
 
     # {
     #     "script": "scripts/tracker_varianza.py",
@@ -79,7 +77,6 @@ TRACKERS = [
 
     
 ]
-
 # ----------------------------------------------------------------------------------
 
 import os
@@ -87,12 +84,29 @@ import sys
 import subprocess
 import xml.etree.ElementTree as ET
 import threading
+import time
+
+# Diccionario global para rastrear la última vez que un tracker dio señales de vida
+tracker_activity = {}
 
 def build_argos_command():
     base = ARGOS_CMD.copy()
     if USE_STDBUF:
         return ["stdbuf", "-oL"] + base
     return base
+
+def monitor_tracker_stdout(p, p_pid):
+    """
+    Lee la salida del tracker carácter por carácter para mantener vivos los \r (barras de progreso).
+    Actualiza el reloj de inactividad cada vez que hay salida.
+    """
+    while True:
+        char = p.stdout.read(1)
+        if not char:
+            break
+        sys.stdout.write(char)
+        sys.stdout.flush()
+        tracker_activity[p_pid] = time.time() # ¡Señal de vida recibida!
 
 def broadcast_output(argos_stdout, tracker_procesos, argos_proc, out_file, mode, auto_stop):
     argos_tags = ["[INFO]", "[WARNING]", "[ERR]", "[FATAL]"]
@@ -178,14 +192,12 @@ def main():
         full_output_path = os.path.join(DATA_DIR, OUTPUT_FILE_NAME)
         output_file_handle = open(full_output_path, "w", encoding="utf-8")
 
-    # --- AQUÍ ESTÁ LA MAGIA QUE CONECTA CON TU VNC ---
     run_env = os.environ.copy()
     if USE_DOT_DECIMALS:
         run_env["LC_ALL"] = "C"
     
     if USE_VISUALIZATION and USE_XVFB:
-        run_env["DISPLAY"] = ":99"  # Esto envía ARGoS a la pantalla negra que ya tienes abierta
-    # -------------------------------------------------
+        run_env["DISPLAY"] = ":99" 
 
     argos_cmd = build_argos_command()
     try:
@@ -214,11 +226,19 @@ def main():
             p = subprocess.Popen(
                 cmd, 
                 stdin=subprocess.PIPE, 
+                stdout=subprocess.PIPE,   # Necesario para escuchar el Heartbeat
+                stderr=subprocess.STDOUT, # Capturar también errores
                 text=True, 
                 bufsize=1,
                 env=run_env
             )
             tracker_procs.append(p)
+            tracker_activity[p.pid] = time.time()
+            
+            # Lanzamos un hilo para escuchar las señales de vida del tracker
+            t = threading.Thread(target=monitor_tracker_stdout, args=(p, p.pid), daemon=True)
+            t.start()
+            
         except FileNotFoundError as e:
             print(f"Error al lanzar {t_conf['script']}:", e)
 
@@ -237,12 +257,34 @@ def main():
         
         broadcaster.join()
         
-        for p in tracker_procs:
-            try:
-                p.wait(timeout=60) 
-            except subprocess.TimeoutExpired:
-                p.terminate()
-                p.wait(timeout=5)
+        # --- LÓGICA DE HEARTBEAT Y TIMEOUT DINÁMICO ---
+        MAX_IDLE_TIME = 120 # Segundos permitidos de silencio absoluto antes de matar un proceso
+        
+        print(f"\n[+] Esperando a que los trackers finalicen sus tareas (Timeout dinámico: {MAX_IDLE_TIME}s de inactividad)...")
+        
+        while tracker_procs:
+            for p in list(tracker_procs):
+                # Si el proceso terminó por su cuenta, lo quitamos de la lista
+                if p.poll() is not None:
+                    tracker_procs.remove(p)
+                    continue
+                
+                # Verificamos si se ha congelado
+                last_active = tracker_activity.get(p.pid, time.time())
+                idle_time = time.time() - last_active
+                
+                if AUTO_STOP_ON_END and idle_time > MAX_IDLE_TIME:
+                    print(f"\n[!] ERROR: El tracker (PID: {p.pid}) se congeló (sin respuesta en {MAX_IDLE_TIME}s). Matando proceso...")
+                    p.terminate()
+                    try:
+                        p.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        p.kill() # Terminar sin piedad si ni siquiera responde a terminate()
+                    tracker_procs.remove(p)
+                    
+            time.sleep(1) # Pequeña pausa para no saturar el CPU
+            
+        print("\n[+] Todos los procesos y trackers han finalizado correctamente.")
                 
     except KeyboardInterrupt:
         print("\nInterrumpido por usuario (Ctrl+C), terminando procesos...")

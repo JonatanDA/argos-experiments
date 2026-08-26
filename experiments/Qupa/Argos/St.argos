@@ -148,11 +148,12 @@
                     <placement index="0" position="0,0,4.34" look_at="0,0,0" up="0,1,0" lens_focal_length="12.5" />
                 </placements>
             </camera>
-            
-            <frame_grabbing directory="Resultados/frames" 
-                            base_name="frame_" 
-                            format="png" 
-                            quality="100" />
+
+            <frame_grabbing directory="Resultados/Robots/Qupa/St10/frame" 
+                base_name="frame_" 
+                format="png" 
+                quality="100" />
+
         </qt-opengl>
     </visualization>
     

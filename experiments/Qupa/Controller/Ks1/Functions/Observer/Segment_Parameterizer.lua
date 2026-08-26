@@ -6,10 +6,10 @@ local SegmentParameterizer = {}
 -- VARIABLES DE CONTROL (LOGGEO Y AJUSTES)
 -- ============================================================================
 local LOG_APPLY        = 0 -- 1 para ver las regresiones iniciales
-local LOG_MERGE        = 1 -- 1 para ver las fusiones de segmentos similares
+local LOG_MERGE        = 0 -- 1 para ver las fusiones de segmentos similares
 local LOG_INTERSECT    = 0 -- 1 para ver las intersecciones calculadas
 local LOG_DIST_ANGLES  = 0 -- 1 para ver distancias y ángulos relativos
-local LOG_PARAMS       = 1 -- 1 para ver el resultado final empaquetado
+local LOG_PARAMS       = 0 -- 1 para ver el resultado final empaquetado
 
 -- Tolerancia en grados. Si dos rectas consecutivas tienen un ángulo
 -- con una diferencia menor o igual a este valor, se fusionan.

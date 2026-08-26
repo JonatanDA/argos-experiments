@@ -47,7 +47,7 @@ START_X_POS_TREE = 100          # Coordenada X inicial para la ventana del árbo
 # =============================================================================
 IMAGE_DIR = "Resultados/Imitation_chain"  # Directorio de guardado
 SAVE_TRAJ_IMAGE = True          # True: Guarda como imagen cada ventana de trayectoria generada
-SAVE_TREE_IMAGE = True          # True: Guarda el mapa del árbol (se actualiza automáticamente)
+SAVE_TREE_IMAGE = False          # True: Guarda el mapa del árbol (se actualiza automáticamente)
 
 # =============================================================================
 # ---------- CONFIGURACIÓN DEL TRACKER Y SISTEMA ----------

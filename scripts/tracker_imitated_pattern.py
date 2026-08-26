@@ -30,12 +30,12 @@ DEFAULT_FPS  = 60               # Tasa de refresco de la animación
 # ---------- CONFIGURACIÓN DE GUARDADO DE DATOS ----------
 # =============================================================================
 # --- Video ---
-SAVE_VIDEO    = True
-VIDEO_DIR     = "Resultados/videos"
+SAVE_VIDEO    = False
+VIDEO_DIR     = "Resultados/Robots/Qupa/St10/Pattern"
 VIDEO_NAME    = "patrones_imitacion.mp4"
 # --- CSV ---
 SAVE_CSV      = True
-CSV_DIR       = "Resultados/Data"
+CSV_DIR       = "Resultados/Robots/Qupa/St10/csv"
 CSV_NAME      = "patrones_imitacion.csv"
 
 # =============================================================================

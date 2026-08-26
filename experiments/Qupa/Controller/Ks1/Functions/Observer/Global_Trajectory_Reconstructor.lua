@@ -1,7 +1,6 @@
 -- Archivo: Functions/Observer/Global_Trajectory_Reconstructor.lua
 
 --NOTAS: 
-
     -- Fragmento: Es una secuencia completa de datos detectada. Ej: {20,11, 120,57, 18,98, 117,85, 18,72}
     -- N-Grama: Es una transición única de (Distancia->Ángulo) o (Ángulo->Distancia) extraída de los fragmentos. 
         --Nos dice cuántas combinaciones hay en el enjambre.
@@ -12,8 +11,10 @@ local GlobalReconstructor = {}
 -- ============================================================================
 -- VARIABLES DE CONTROL Y LOGGEO
 -- ============================================================================
-
-local LOG_GlobalReconstructor = 1 -- 1: Imprime los detalles de la reconstrucción.
+local LOG_TABLA_FRAGMENTOS = true  -- 1. true/false: Imprimir o no la tabla de fragmentos recolectados
+local LOG_TERMOSTATO       = true  -- 2. true/false: Imprimir o no la auto-calibración y el filtro de ruido
+local LOG_ARBITRO          = 1     -- 3. 0: Nada, 1: Resumen ganador, 2: Detalle de puntajes y caminos propuestos
+local LOG_TRADUCCION       = true  -- 4. true/false: Imprimir o no la traducción física de los patrones finales
 
 local ARBITER_CONFIG = {}
 local ngram_db = {}
@@ -133,37 +134,6 @@ local function calibrar_hiperparametros(freq_array, current_ngram_db, cfg)
         ratio_pureza = pureza_total / suma_frecuencias
     end
 
-    log("\n=========================================")
-    log(" [TERMOSTATO] AUTO-CALIBRACIÓN DEL ENJAMBRE")
-    log("=========================================")
-    log("  [1] Extracción de Métricas Base:")
-    
-    if LOG_GlobalReconstructor == 1 then
-        log(string.format("      - Frecuencia Máxima Dominante: %d", max_frecuencia))
-        for _, ngr in ipairs(ngrams_dominantes) do
-            log(string.format("        -> Corresponde al N-Grama: (Ang: %.2f, Dist: %.2f)", ngr.a, ngr.d))
-        end
-    end
-    
-    log(string.format("      - Frecuencia Promedio Global: %.2f", prom_frecuencia))
-    
-    if LOG_GlobalReconstructor == 1 then
-        log(string.format("      - Volumen Total (Cantidad de N-Gramas): %d", suma_frecuencias))
-    end
-    if LOG_GlobalReconstructor == 1 then
-        log(string.format("      - N-Gramas Únicos: %d", #freq_array))
-    end
-    if LOG_GlobalReconstructor == 1 then
-        log(string.format("      - N-Gramas con Simetría (Periodicos): %d", pureza_total))
-    end
-    
-    log("\n  [2] Diagnóstico del Entorno (Fórmulas):")
-    log("      * Índice de Orden: Mide qué tan repetitivos son los datos (1.0 = patrón dominante claro, 0 = caos).")
-    log(string.format("        -> 1.0 - (Únicos [%d] / Volumen [%d]) = %.2f", #freq_array, suma_frecuencias, indice_orden))
-    
-    log("      * Ratio de Pureza: Mide la proporción de geometrías perfectas (como polígonos cerrados).")
-    log(string.format("        -> Periodicos [%d] / Volumen [%d] = %.2f", pureza_total, suma_frecuencias, ratio_pureza))
-
     local nivel_caos = 1.0 - indice_orden
     local ruido_extra = nivel_caos * cfg.CONFIG.RUIDO_PENALIZACION_MAX
     ARBITER_CONFIG.RUIDO_UMBRAL_RELATIVO = cfg.CONFIG.RUIDO_BASE + ruido_extra
@@ -174,11 +144,36 @@ local function calibrar_hiperparametros(freq_array, current_ngram_db, cfg)
     local penalizacion_caos = nivel_caos * cfg.CONFIG.SCORE_PENALIZACION_MAX
     ARBITER_CONFIG.MIN_SCORE = cfg.CONFIG.SCORE_MIN_BASE + penalizacion_caos
 
-    log("\n  [3] Fórmulas y Resultados Aplicados:")
-    log("      * Umbral de Ruido: Porcentaje mínimo de repetición para que un dato NO sea descartado.")
-    log(string.format("        > UMBRAL RUIDO: Base(%.2f) + [Caos(%.2f) * Max_Pen(%.2f)] = %.1f%%.", 
-        cfg.CONFIG.RUIDO_BASE, nivel_caos, cfg.CONFIG.RUIDO_PENALIZACION_MAX, ARBITER_CONFIG.RUIDO_UMBRAL_RELATIVO * 100))
-    log("=========================================")
+    local repeticiones_minimas = max_frecuencia * ARBITER_CONFIG.RUIDO_UMBRAL_RELATIVO
+
+    if LOG_TERMOSTATO then
+        log("\n=========================================")
+        log(" [TERMOSTATO] AUTO-CALIBRACIÓN DEL ENJAMBRE")
+        log("=========================================")
+        log("  [1] Extracción de Métricas Base:")
+        log(string.format("      - Frecuencia Máxima Dominante: %d", max_frecuencia))
+        for _, ngr in ipairs(ngrams_dominantes) do
+            log(string.format("        -> Corresponde al N-Grama: (Ang: %.2f, Dist: %.2f)", ngr.a, ngr.d))
+        end
+        log(string.format("      - Frecuencia Promedio Global: %.2f", prom_frecuencia))
+        log(string.format("      - Volumen Total (Cantidad de N-Gramas): %d", suma_frecuencias))
+        log(string.format("      - N-Gramas Únicos: %d", #freq_array))
+        log(string.format("      - N-Gramas con Simetría (Periodicos): %d", pureza_total))
+        
+        log("\n  [2] Diagnóstico del Entorno (Fórmulas):")
+        log("      * Índice de Orden: Mide qué tan repetitivos son los datos (1.0 = patrón dominante claro, 0 = caos).")
+        log(string.format("        -> 1.0 - (Únicos [%d] / Volumen [%d]) = %.2f", #freq_array, suma_frecuencias, indice_orden))
+        log("      * Ratio de Pureza: Mide la proporción de geometrías perfectas (como polígonos cerrados).")
+        log(string.format("        -> Periodicos [%d] / Volumen [%d] = %.2f", pureza_total, suma_frecuencias, ratio_pureza))
+
+        log("\n  [3] Fórmulas y Resultados Aplicados:")
+        log("      * Umbral de Ruido: Porcentaje mínimo de repetición para que un dato NO sea descartado.")
+        log(string.format("        > FÓRMULA UMBRAL : Base(%.2f) + [Caos(%.2f) * Max_Pen(%.2f)] = %.1f%%.", 
+            cfg.CONFIG.RUIDO_BASE, nivel_caos, cfg.CONFIG.RUIDO_PENALIZACION_MAX, ARBITER_CONFIG.RUIDO_UMBRAL_RELATIVO * 100))
+        log(string.format("        > LÍMITE ABSOLUTO: %.1f%% de %d repeticiones (frecuencia dominante).", ARBITER_CONFIG.RUIDO_UMBRAL_RELATIVO * 100, max_frecuencia))
+        log(string.format("        > RESULTADO      : Cualquier fragmento con MENOS de %.2f repeticiones es RUIDO.", repeticiones_minimas))
+        log("=========================================")
+    end
 end
 
 local function calcular_limite_ruido(frecuencias)
@@ -187,8 +182,7 @@ local function calcular_limite_ruido(frecuencias)
     for _, f in ipairs(frecuencias) do
         if f > max_freq then max_freq = f end
     end
-    local limite = max_freq * ARBITER_CONFIG.RUIDO_UMBRAL_RELATIVO
-    return limite
+    return max_freq * ARBITER_CONFIG.RUIDO_UMBRAL_RELATIVO
 end
 
 local function calculate_overlap(s1, s2, min_ov, cfg)
@@ -427,9 +421,11 @@ local function process_numeric_result(result_struct, patron_id, cfg)
         end
     end
 
-    log(string.format("\n[TRADUCCIÓN FÍSICA - PATRÓN %d]", patron_id))
-    for idx, seg in ipairs(current_pattern_params) do 
-        log(string.format("   Seg %d: (Ang %.2f, Dist %.2f)", idx, seg[2], seg[1])) 
+    if LOG_TRADUCCION then
+        log(string.format("\n[TRADUCCIÓN FÍSICA - PATRÓN %d]", patron_id))
+        for idx, seg in ipairs(current_pattern_params) do 
+            log(string.format("   Seg %d: (Ang %.2f, Dist %.2f)", idx, seg[2], seg[1])) 
+        end
     end
 
     return current_pattern_params
@@ -440,11 +436,14 @@ end
 -- =========================================================================
 
 function GlobalReconstructor.run(robot_id, stored_data, cfg)
-    log("\n=========================================")
-    log(" TABLA DE FRAGMENTOS RECOLECTADOS")
-    log("=========================================")
-    for i, v in ipairs(stored_data) do 
-        log(string.format(" [%d] %s", i, fmt_struct(v))) 
+    
+    if LOG_TABLA_FRAGMENTOS then
+        log("\n=========================================")
+        log(" TABLA DE FRAGMENTOS RECOLECTADOS")
+        log("=========================================")
+        for i, v in ipairs(stored_data) do 
+            log(string.format(" [%d] %s", i, fmt_struct(v))) 
+        end
     end
         
     local raw_pool = {}
@@ -473,10 +472,15 @@ function GlobalReconstructor.run(robot_id, stored_data, cfg)
     for _, struct in ipairs(raw_pool) do
         local fragment_ngrams, _ = extract_ngrams_from_fragment(struct, cfg)
         local is_noisy = false
+        local failed_ngram_count = 0
+        
         for _, ngr in ipairs(fragment_ngrams) do
             for _, db_ngr in ipairs(ngram_db) do
                 if (math.abs(db_ngr.d - ngr.d) <= cfg.CONFIG.TOL_DIST and math.abs(db_ngr.a - ngr.a) <= cfg.CONFIG.TOL_ANG) then
-                    if db_ngr.count < limite_ruido then is_noisy = true end
+                    if db_ngr.count < limite_ruido then 
+                        is_noisy = true 
+                        failed_ngram_count = db_ngr.count
+                    end
                     break
                 end
             end
@@ -486,8 +490,8 @@ function GlobalReconstructor.run(robot_id, stored_data, cfg)
         if not is_noisy then 
             table.insert(clean_pool, struct) 
         else
-            if LOG_GlobalReconstructor == 1 then
-                log(string.format(" [FILTRO RUIDO] Fragmento descartado por umbral: %s", fmt_struct(struct)))
+            if LOG_TERMOSTATO then
+                log(string.format(" [FILTRO RUIDO] Descartado por umbral (Tenía %d repeticiones, mínimo era %.2f): %s", failed_ngram_count, limite_ruido, fmt_struct(struct)))
             end
         end
     end
@@ -508,8 +512,6 @@ function GlobalReconstructor.run(robot_id, stored_data, cfg)
         local explorer_name = "M1"
         local explorer_pool_result = {}
         
-        -- Mantenemos la variable de configuración cfg.CONFIG.MAX_ISLANDS_M2 
-        -- para no romper dependencias externas, pero a nivel lógico trabajamos con fragmentos.
         if #clean_pool <= cfg.CONFIG.MAX_ISLANDS_M2 then
             local m2_solution = solve_smart_backtracking_all(clean_pool, cfg)
             if m2_solution and #m2_solution.pool_result > 0 then
@@ -536,13 +538,45 @@ function GlobalReconstructor.run(robot_id, stored_data, cfg)
         if m3_score > explorer_score and m3_score >= ARBITER_CONFIG.MIN_SCORE then
             winner_struct = m3_hypothesis
             ids_to_remove = m3_covered_ids
-            log(string.format("\n [ÁRBITRO] >>> ¡Gana M3 (Geometría Regular)! -> %s", fmt_struct(winner_struct)))
+            
+            if LOG_ARBITRO == 2 then
+                log(string.format("\n [ÁRBITRO DETALLE] Evaluación de la Iteración %d", iteration))
+                log(string.format("   - Puntaje M3 (Regular): %.4f", m3_score))
+                log(string.format("   - Puntaje %s (Irregular): %.4f", explorer_name, explorer_score))
+                log(string.format("   - Mínimo Requerido: %.4f", ARBITER_CONFIG.MIN_SCORE))
+                log(string.format("   - Camino propuesto M3: %s", fmt_struct(m3_hypothesis)))
+                if explorer_hypothesis then
+                    log(string.format("   - Camino propuesto %s: %s", explorer_name, fmt_struct(explorer_hypothesis)))
+                end
+            end
+            
+            if LOG_ARBITRO >= 1 then
+                log(string.format("\n [ÁRBITRO] >>> ¡Gana M3 (Geometría Regular)! -> %s", fmt_struct(winner_struct)))
+            end
             
         elseif explorer_score >= m3_score and explorer_score >= ARBITER_CONFIG.MIN_SCORE then
             winner_struct = explorer_hypothesis
             ids_to_remove = explorer_hypothesis.consumed_ids
-            log(string.format("\n [ÁRBITRO] >>> ¡Gana %s (Ruta Irregular)! -> %s", explorer_name, fmt_struct(winner_struct)))
+            
+            if LOG_ARBITRO == 2 then
+                log(string.format("\n [ÁRBITRO DETALLE] Evaluación de la Iteración %d", iteration))
+                log(string.format("   - Puntaje M3 (Regular): %.4f", m3_score))
+                log(string.format("   - Puntaje %s (Irregular): %.4f", explorer_name, explorer_score))
+                log(string.format("   - Mínimo Requerido: %.4f", ARBITER_CONFIG.MIN_SCORE))
+                if m3_hypothesis then
+                    log(string.format("   - Camino propuesto M3: %s", fmt_struct(m3_hypothesis)))
+                end
+                log(string.format("   - Camino propuesto %s: %s", explorer_name, fmt_struct(explorer_hypothesis)))
+            end
+            
+            if LOG_ARBITRO >= 1 then
+                log(string.format("\n [ÁRBITRO] >>> ¡Gana %s (Ruta Irregular)! -> %s", explorer_name, fmt_struct(winner_struct)))
+            end
         else
+            if LOG_ARBITRO == 2 then
+                log(string.format("\n [ÁRBITRO DETALLE] Fin - Ninguno superó el umbral mínimo (%.4f)", ARBITER_CONFIG.MIN_SCORE))
+                log(string.format("   - Puntaje M3: %.4f | Puntaje %s: %.4f", m3_score, explorer_name, explorer_score))
+            end
             break
         end
 

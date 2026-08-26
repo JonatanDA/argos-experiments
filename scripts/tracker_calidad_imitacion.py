@@ -2,7 +2,7 @@
 """
 tracker_calidad_imitacion.py
 
-- controllers: Tr6 -> Qupa
+- controllers: Tr6, Tr7, Ks1 -> Qupa
 
 - Alineamiento Circular con Recuperación Geométrica (Heal Pattern).
 - Reincorporación del desglose completo de segmentos en el panel de texto.
@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 # ---------- CONFIGURACIÓN DE VISUALIZACIÓN E INTERFAZ ----------
 # =============================================================================
 # --- Ventanas de Comparación ---
-SHOW_COMPARISON_WINDOWS = False                              # True: Abre pop-ups evaluando la calidad de imitación
+SHOW_COMPARISON_WINDOWS = True                              # True: Abre pop-ups evaluando la calidad de imitación
 MAX_WINDOWS             = 5                                 # Límite de ventanas abiertas simultáneamente
 
 # --- Ventana de Diccionario Original ---
@@ -33,8 +33,8 @@ PLOT_SUPERPUESTAS       = False                             # (Aplica para SHOW_
 # =============================================================================
 # ---------- CONFIGURACIÓN DE GUARDADO DE DATOS ----------
 # =============================================================================
-SAVE_IMAGES             = False                             # True: Guarda capturas de las gráficas de comparación
-IMAGE_DIR               = "Resultados/Calidad_Imitacion"    # (Aplica si SAVE_IMAGES=True) Directorio de guardado
+SAVE_IMAGES             = True                             # True: Guarda capturas de las gráficas de comparación
+IMAGE_DIR               = "Resultados/Robots/Qupa/Ks1/Calidad_Imitacion"    # (Aplica si SAVE_IMAGES=True) Directorio de guardado
 
 # =============================================================================
 # ---------- CONFIGURACIÓN DEL TRACKER Y SISTEMA ----------
