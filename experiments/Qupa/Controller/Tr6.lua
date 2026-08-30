@@ -41,7 +41,7 @@ Num_cantidad_leds                   = 2
 ------------------------------
 --Parámetro de simulación internos
 
-speed_dem = 30                   -- Velocidad del demostrador al ejecutar el patrón
+speed_dem = 13                   -- Velocidad del demostrador al ejecutar el patrón
 d_speed   = 15                  -- velocidad normal
 g_speed   = 50                  -- Velocidad de giro
 
@@ -147,91 +147,94 @@ _LOG_MODE = 1
 displayed_data  = 3 --1 Datos obtenidos por el observador. 2. Datos globales del movimiento del demostrador, 3: Ambos
 function Print_tracker_trayectory_data(k, x, y)
 
-    if type(k) == "number" then
+--     if type(k) == "number" then
 
-        if displayed_data == 1 or displayed_data == 3 then
-            print("Qupa" .. k .. " & " .. x .. " , " .. y)
-        end
+--         if displayed_data == 1 or displayed_data == 3 then
+--             print("Qupa" .. k .. " & " .. x .. " , " .. y)
+--         end
 
-    elseif type(k) == "string" then
+--     elseif type(k) == "string" then
 
-        -- Obtener el vector de posición inicial
-        local x = robot.positioning.position.x
-        local y = robot.positioning.position.y
+--         -- Obtener el vector de posición inicial
+--         local x = robot.positioning.position.x
+--         local y = robot.positioning.position.y
 
-        if displayed_data == 2 or displayed_data == 3 then
-            if robot.id == "Qupa4" then
+--         if displayed_data == 2 or displayed_data == 3 then
+--             if robot.id == "Qupa4" then
     
-                print("Qupa400 & " .. x .. " , " .. y)  -- Imprime los datos globales del movimiento del Observador
-            else     
-                --print(robot.id .. " & " .. x .. " , " .. y)  
-            end
-        end
-    end
+--                 print("Qupa400 & " .. x .. " , " .. y)  -- Imprime los datos globales del movimiento del Observador
+--             else     
+--                 --print(robot.id .. " & " .. x .. " , " .. y)  
+--             end
+--         end
+--     end
 end
 
 function Print_tracker_calidad_imitacion_data(linea_resumen, is_master)
 
-    if is_master == 0 then
+    -- if is_master == 0 then
 
-        print(linea_resumen)
-    else
+    --     print(linea_resumen)
+    -- else
 
-        -- Función auxiliar para separar la parte entera y los dos decimales de un número
-        local function split_num(val)
-            local sign = val < 0 and "-" or ""
-            local abs_val = math.abs(val)
-            local int_part = math.floor(abs_val)
-            local dec_part = math.floor((abs_val - int_part) * 100 + 0.5)
+    --     -- Función auxiliar para separar la parte entera y los dos decimales de un número
+    --     local function split_num(val)
+    --         local sign = val < 0 and "-" or ""
+    --         local abs_val = math.abs(val)
+    --         local int_part = math.floor(abs_val)
+    --         local dec_part = math.floor((abs_val - int_part) * 100 + 0.5)
             
-            -- Ajuste por si el redondeo sube el decimal a 100
-            if dec_part >= 100 then
-                int_part = int_part + 1
-                dec_part = dec_part - 100
-            end
+    --         -- Ajuste por si el redondeo sube el decimal a 100
+    --         if dec_part >= 100 then
+    --             int_part = int_part + 1
+    --             dec_part = dec_part - 100
+    --         end
             
-            -- Retorna dos valores: la parte entera (con su signo) y la parte decimal a 2 dígitos
-            return string.format("%s%d", sign, int_part), string.format("%02d", dec_part)
-        end
+    --         -- Retorna dos valores: la parte entera (con su signo) y la parte decimal a 2 dígitos
+    --         return string.format("%s%d", sign, int_part), string.format("%02d", dec_part)
+    --     end
         
-        -- Obtenemos el patrón correspondiente a la variable global 'figura' actual
-        local data = original_params()
+    --     -- Obtenemos el patrón correspondiente a la variable global 'figura' actual
+    --     local data = original_params()
         
-        -- Verificamos que se haya encontrado un patrón válido
-        if not data or not data.params then 
-            log(robot.id .. " & Error: No se encontró un patrón asignado.")
-            return 
-        end
+    --     -- Verificamos que se haya encontrado un patrón válido
+    --     if not data or not data.params then 
+    --         log(robot.id .. " & Error: No se encontró un patrón asignado.")
+    --         return 
+    --     end
         
-        local nombre_patron = data.name or "Desconocido"
-        -- Iniciamos la cadena con el formato solicitado
-        local resultado = robot.id .. " & Original&" .. nombre_patron
+    --     local nombre_patron = data.name or "Desconocido"
+    --     -- Iniciamos la cadena con el formato solicitado
+    --     local resultado = robot.id .. " & Original&" .. nombre_patron
         
-        local params = data.params
-        for j = 1, #params do
-            local dist = params[j][1]
-            local ang = params[j][2]
+    --     local params = data.params
+    --     for j = 1, #params do
+    --         local dist = params[j][1]
+    --         local ang = params[j][2]
             
-            -- Separamos enteros y decimales de la distancia y el ángulo
-            local dist_i, dist_d = split_num(dist)
-            local ang_i, ang_d = split_num(ang)
+    --         -- Separamos enteros y decimales de la distancia y el ángulo
+    --         local dist_i, dist_d = split_num(dist)
+    --         local ang_i, ang_d = split_num(ang)
             
-            -- Concatenamos el paso con el formato (distI,distD,angI,angD)
-            resultado = resultado .. string.format("(%s,%s,%s,%s)", dist_i, dist_d, ang_i, ang_d)
+    --         -- Concatenamos el paso con el formato (distI,distD,angI,angD)
+    --         resultado = resultado .. string.format("(%s,%s,%s,%s)", dist_i, dist_d, ang_i, ang_d)
             
-            -- Agregamos la coma separadora entre pasos (excepto en el último)
-            if j < #params then
-                resultado = resultado .. ","
-            end
-        end
-        -- Imprimimos el resultado final en la terminal de ARGoS
-        log(resultado)
-    end
+    --         -- Agregamos la coma separadora entre pasos (excepto en el último)
+    --         if j < #params then
+    --             resultado = resultado .. ","
+    --         end
+    --     end
+    --     -- Imprimimos el resultado final en la terminal de ARGoS
+    --     log(resultado)
+    -- end
 end
 
-function Print_tracker_varianza(k, var, separacion, avance)
-    --print( "Maestro"..k.." & " .. var)                -- Datos para el anális de varianza en los datos obtenidos por el observador. Script -> sun_sim.py
-   -- print( "Otsu & " .. separacion.." , "..avance)    -- Datos para el anális del método de otsu a distintos valores de velocidad del demostrador: speed_dem  -> Script: master_evluator.py
+function Print_tracker_varianza(k, var)
+    --print( "Maestro"..k.." & " .. var)             -- Datos para el anális de varianza en los datos obtenidos por el observador. Script -> sun_sim.py
+end
+
+function Print_M_Otsu_evaluator(separacion, avance)
+    print( "Otsu & " .. separacion.." , "..avance) -- Datos para el anális del método de otsu a distintos valores de velocidad del demostrador: speed_dem  -> Script: master_evluator.py
 end
 
 -------------------------------------------------------------------------------------------------------------------------------------
@@ -1546,10 +1549,10 @@ function detect_seg(s, xx, yy, ttypes)
         log("\n>>> FASE 3: SEGMENTACIÓN CON HISTÉRESIS (LOOK-AHEAD)")
     end
 
-    if  DS_FIRST then 
-        Print_tracker_varianza(dato1, mejor_avance) 
-        DS_FIRST = false
-    end
+    -- if  DS_FIRST then 
+        Print_M_Otsu_evaluator(dato1, mejor_avance) 
+    --     DS_FIRST = false
+    -- end
 
     -- --- FASE 3: SEGMENTACIÓN BASADA EN VALLES ---
     local segmentos = {}      

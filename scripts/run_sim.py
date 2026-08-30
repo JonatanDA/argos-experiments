@@ -1,83 +1,14 @@
+#!/usr/bin/env python3
+
 """
-run_sim.py (Modular)
-- Prepara temp_run.argos (cambia script lua y configura visualización).
-- Lanza argos3 y múltiples scripts de seguimiento.
-- Clona la salida de ARGoS y la envía a cada script.
-- Detiene ARGoS automáticamente al detectar el END_PATTERN (opcional).
+run_sim.py (Modular y Auto-Configurable)
+- Prepara temp_run_<PID>.argos y temp_run_<PID>.lua dinámicos (evita colisiones).
+- Auto-descomenta funciones y variables Lua basándose en los trackers activos.
+- Lanza argos3 y múltiples scripts de seguimiento (trackers).
+- Clona la salida de ARGoS y la envía a cada script evitando colisiones en terminal.
+- Detiene ARGoS automáticamente al detectar el END_SIMULATION_PATTERN.
 - Guarda el historial de la consola en un archivo de texto filtrado.
 """
-
-# ---------------- CONFIGURACIÓN (modifica aquí valores por defecto) ----------------
-
-# ARGOS_FILE          = "experiments/Footbot/Argos/Winfield.argos"   
-# LUA_SCRIPT          = "experiments/Footbot/Controller/J_exp1.lua" 
-
-# ARGOS_FILE          = "experiments/Qupa/Argos/St.argos"   
-# LUA_SCRIPT          = "experiments/Qupa/Controller/St10.lua" 
-
-# ARGOS_FILE          = "experiments/Qupa/Argos/Tr.argos"   
-# LUA_SCRIPT          = "experiments/Qupa/Controller/Tr7/Tr7.lua" 
-
-ARGOS_FILE          = "experiments/Qupa/Argos/Ks.argos"   
-LUA_SCRIPT          = "experiments/Qupa/Controller/Ks1/Ks1.lua" 
-
-USE_STDBUF          = True   
-ARGOS_CMD           = ["argos3", "-c", "temp_run.argos"]  
-
-USE_VISUALIZATION   = True # Controla si se lanza la interfaz gráfica de ARGoS o no.
-
-# <-- VARIABLES: Control de pantalla virtual de alta resolución
-USE_XVFB            = False           
-XVFB_RESOLUTION     = "3840x2160x24" 
-
-# <-- VARIABLE: Controla el idioma del sistema operativo para ARGoS
-USE_DOT_DECIMALS    = False  
-
-SAVE_OUTPUT_MODE    = "None" 
-DATA_DIR            = "Resultados/Historial_run_sim" 
-OUTPUT_FILE_NAME    = "j1.txt"
-
-END_PATTERN         = "End_simulation" 
-AUTO_STOP_ON_END    = True 
-#MAX_IDLE_TIME = 120 # Segundos permitidos de silencio absoluto antes de matar un proceso
-
-# Agrega aquí todos los scripts que necesiten leer la salida de ARGoS
-
-
-TRACKERS = [    
-    {
-        "script": "scripts/tracker_trayectory.py",
-        "args": []
-    },
-
-    {
-        "script": "scripts/tracker_calidad_imitacion.py",
-        "args": []
-    },
-
-    # {
-    #     "script": "scripts/tracker_varianza.py",
-    #     "args": []
-    # },
-
-    # {
-    #     "script": "scripts/tracker_imitation_chain.py",
-    #     "args": []
-    # },
-
-    # {
-    #     "script": "scripts/tracker_imitated_pattern.py",
-    #     "args": []
-    # },
-    
-    # {
-    #     "script": "scripts/tracker_clusters.py",
-    #     "args": []
-    # }
-
-    
-]
-# ----------------------------------------------------------------------------------
 
 import os
 import sys
@@ -85,43 +16,253 @@ import subprocess
 import xml.etree.ElementTree as ET
 import threading
 import time
+import argparse
+import re
 
+# =============================================================================
+# ---------- 1. DICCIONARIO DE TRACKERS Y DEPENDENCIAS LUA ----------
+# =============================================================================
+# Este diccionario documenta los trackers y evaluadores disponibles, qué hacen y 
+# qué funciones/variables LUA requieren estar en el script .lua para funcionar.
+#
+# Funciones Lua de Referencia (Para insertar en tus .lua si no están):
+#
+# displayed_data = 3 -- 1: Apprentice, 2: Global Master, 3: Ambos
+# PTTD = false
+# function Print_tracker_trayectory_data(k, x, y, logging) ... end
+# function Print_tracker_calidad_imitacion_data(linea_resumen, is_master) ... end
+# function Print_tracker_varianza(k, var) ... end
+# function evaluator_otsu(separacion, avance) ... end
+# function evaluator_ruido(raw_angle, raw_dist, noisy_angle, noisy_dist) ... end
+#
+TRACKER_DEPENDENCIES = {
+    "tracker_trayectory.py": {
+        "descripcion": "Rastrea y grafica la trayectoria 2D (x,y) global del master y/o aprendiz.",
+        "funciones_lua": ["Print_tracker_trayectory_data"],
+        "variables_lua": ["displayed_data", "PTTD"]
+    },
+    "tracker_calidad_imitacion.py": {
+        "descripcion": "Evalúa y compara la calidad geométrica del patrón dibujado frente al original (Heal Pattern, EMP, Qi).",
+        "funciones_lua": ["Print_tracker_calidad_imitacion_data"],
+        "variables_lua": []
+    },
+    "tracker_varianza.py": {
+        "descripcion": "Analiza la varianza y convergencia en los datos obtenidos por el observador.",
+        "funciones_lua": ["Print_tracker_varianza"],
+        "variables_lua": []
+    },
+    "evaluator_otsu.py": {
+        "descripcion": "Evalúa el método de Otsu a distintos valores de velocidad.",
+        "funciones_lua": ["evaluator_otsu"],
+        "variables_lua": []
+    },
+    "evaluator_ruido&Qi.py": {
+        "descripcion": "Evalúa el comportamiento al inyectar ruido estadístico (ángulo y distancia).",
+        "funciones_lua": ["evaluator_ruido"],
+        "variables_lua": []
+    }
+}
+
+# =============================================================================
+# ---------- CONFIGURACIÓN DE RUTAS Y ARCHIVOS DE SIMULACIÓN ----------
+# =============================================================================
+# Preconfiguraciones guardadas (descomentar según el experimento):
+# DEFAULT_ARGOS_FILE              = "experiments/Footbot/Argos/Winfield.argos"   
+# DEFAULT_LUA_SCRIPT              = "experiments/Footbot/Controller/J_exp1.lua" 
+
+# DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/St.argos"   
+# DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/St10.lua" 
+
+# DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Tr.argos"   
+# DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Tr6.lua" 
+
+# DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Tr.argos"   
+# DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Tr7/Tr7.lua" 
+
+DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Ks.argos"   
+DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Ks1/Ks1.lua" 
+
+# =============================================================================
+# ---------- CONFIGURACIÓN DE VERBOSIDAD ----------
+# =============================================================================
+# 0: Silencioso total (solo info inicial y conteo de exps). Todo pasa oculto. Ideal para pruebas masivas.
+# 1: Recomendado (Muestra eventos vitales: inicios, cierres, guardados de evaluadores).
+# 2: Detallado (Modo 1 + Prints específicos etiquetados de los Trackers, sin mezclar salidas ruidosas).
+# 3: Todo (Modo 2 + Datos puros de ARGoS como variables continuas, timers, alertas internas, etc).
+NIVEL_LOG = 2
+
+# =============================================================================
+# ---------- CONFIGURACIÓN DE EJECUCIÓN Y MOTOR DE ARGOS ----------
+# =============================================================================
+USE_STDBUF_BUFFERING            = True                                
+ARGOS_BASE_COMMAND              = ["argos3", "-c"] # Se añadirá el archivo dinámico luego
+
+# =============================================================================
+# ---------- CONFIGURACIÓN DE VISUALIZACIÓN E INTERFAZ ----------
+# =============================================================================
+ENABLE_VISUALIZATION            = False              # True: Muestra la ventana de ARGoS, False: Headless (sin GUI)             
+
+# --- Control de Pantalla Virtual (Xvfb) ---
+USE_XVFB_VIRTUAL_DISPLAY        = False             
+XVFB_DISPLAY_RESOLUTION         = "3840x2160x24" 
+
+# =============================================================================
+# ---------- CONFIGURACIÓN DE SISTEMA Y LOCALIZACIÓN ----------
+# =============================================================================
+FORCE_DOT_DECIMALS              = False             
+
+# =============================================================================
+# ---------- CONFIGURACIÓN DE HISTORIAL Y ARCHIVOS DE SALIDA ----------
+# =============================================================================
+SAVE_OUTPUT_MODE                = "None"            
+OUTPUT_DATA_DIR                 = "Resultados/Historial_run_sim" 
+OUTPUT_LOG_FILENAME             = "j1.txt"
+
+# =============================================================================
+# ---------- CONTROL DE PROCESO Y FINALIZACIÓN ----------
+# =============================================================================
+END_SIMULATION_PATTERN          = "End_simulation"  
+AUTO_STOP_ON_END_PATTERN        = True              
+MAX_IDLE_TIMEOUT_SEC            = 120               
+
+# =============================================================================
+# ---------- CONFIGURACIÓN DE TRACKERS ACTIVOS ----------
+# =============================================================================
+TRACKERS = [    
+    {
+        "script": "scripts/tracker_trayectory.py",
+        "args": []
+    },
+    {
+        "script": "scripts/tracker_calidad_imitacion.py",
+        "args": []
+    },
+    {
+        "script": "scripts/tracker_varianza.py",
+        "args": []
+    },
+    # {
+    #     "script": "scripts/tracker_imitation_chain.py",
+    #     "args": []
+    # },
+    # {
+    #     "script": "scripts/tracker_imitated_pattern.py",
+    #     "args": []
+    # },
+    # {
+    #     "script": "scripts/tracker_clusters.py",
+    #     "args": []
+    # }
+]
+
+# =============================================================================
 # Diccionario global para rastrear la última vez que un tracker dio señales de vida
 tracker_activity = {}
+print_lock = threading.Lock()
 
-def build_argos_command():
-    base = ARGOS_CMD.copy()
-    if USE_STDBUF:
+def print_log(mensaje, nivel_minimo=1, actual_nivel_log=1, end="\n"):
+    """Impresor condicional que respeta el NIVEL_LOG establecido."""
+    if actual_nivel_log >= nivel_minimo:
+        with print_lock:
+            sys.stdout.write(mensaje + end)
+            sys.stdout.flush()
+
+def auto_uncomment_lua(filepath, dest_path, func_names, var_names):
+    """
+    Lee el archivo Lua original y genera una copia temporal donde las 
+    funciones y variables requeridas por los trackers han sido descomentadas.
+    """
+    if not func_names and not var_names:
+        import shutil
+        shutil.copy(filepath, dest_path)
+        return
+
+    with open(filepath, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+
+    out_lines = []
+    in_target_func = False
+    depth = 0
+
+    for line in lines:
+        is_var_line = False
+        if not in_target_func:
+            for vname in var_names:
+                # Busca "-- nombre_variable =" y lo descomenta
+                if re.match(rf"^[ \t]*--\s*{vname}\s*=", line):
+                    uncommented = re.sub(r"^([ \t]*)--\s?", r"\1", line)
+                    out_lines.append(uncommented)
+                    is_var_line = True
+                    break
+        
+        if is_var_line:
+            continue
+
+        if not in_target_func:
+            for fname in func_names:
+                if re.match(rf"^[ \t]*--\s*function\s+{fname}\b", line):
+                    in_target_func = True
+                    depth = 0
+                    break
+
+        if in_target_func:
+            uncommented = re.sub(r"^([ \t]*)--\s?", r"\1", line)
+            out_lines.append(uncommented)
+            clean_line = re.sub(r"--.*", "", uncommented)
+            clean_line = re.sub(r'".*?"', '""', clean_line)
+            words = re.findall(r"\b\w+\b", clean_line)
+            for w in words:
+                if w in ['function', 'if', 'for', 'while', 'repeat']:
+                    depth += 1
+                elif w in ['end', 'until']:
+                    depth -= 1
+            if depth == 0:
+                in_target_func = False
+        else:
+            out_lines.append(line)
+
+    with open(dest_path, 'w', encoding='utf-8') as f:
+        f.writelines(out_lines)
+
+def build_argos_command(temp_argos_file):
+    base = ARGOS_BASE_COMMAND.copy() + [temp_argos_file]
+    if USE_STDBUF_BUFFERING:
         return ["stdbuf", "-oL"] + base
     return base
 
-def monitor_tracker_stdout(p, p_pid):
-    """
-    Lee la salida del tracker carácter por carácter para mantener vivos los \r (barras de progreso).
-    Actualiza el reloj de inactividad cada vez que hay salida.
-    """
+def monitor_tracker_stdout(p, p_pid, actual_nivel_log):
+    buffer_line = ""
     while True:
         char = p.stdout.read(1)
         if not char:
+            if buffer_line and actual_nivel_log >= 2:
+                with print_lock:
+                    sys.stdout.write(buffer_line)
+                    sys.stdout.flush()
             break
-        sys.stdout.write(char)
-        sys.stdout.flush()
-        tracker_activity[p_pid] = time.time() # ¡Señal de vida recibida!
+            
+        buffer_line += char
+        if char == '\n' or char == '\r':
+            if actual_nivel_log >= 2:
+                with print_lock:
+                    sys.stdout.write(buffer_line)
+                    sys.stdout.flush()
+            buffer_line = ""
+            
+        tracker_activity[p_pid] = time.time() 
 
-def broadcast_output(argos_stdout, tracker_procesos, argos_proc, out_file, mode, auto_stop):
+def broadcast_output(argos_stdout, tracker_procesos, argos_proc, out_file, mode, auto_stop, actual_nivel_log):
     argos_tags = ["[INFO]", "[WARNING]", "[ERR]", "[FATAL]"]
 
     for line in argos_stdout:
-        sys.stdout.write(line)
-        sys.stdout.flush()
+        if actual_nivel_log >= 3:
+            with print_lock:
+                sys.stdout.write(line)
+                sys.stdout.flush()
         
         if out_file and mode:
             is_log = any(tag in line for tag in argos_tags)
-            if mode == "ALL":
-                out_file.write(line)
-            elif mode == "LOG" and is_log:
-                out_file.write(line)
-            elif mode == "PRINT" and not is_log:
+            if mode == "ALL" or (mode == "LOG" and is_log) or (mode == "PRINT" and not is_log):
                 out_file.write(line)
             out_file.flush() 
         
@@ -133,8 +274,8 @@ def broadcast_output(argos_stdout, tracker_procesos, argos_proc, out_file, mode,
                 except OSError:
                     pass
         
-        if auto_stop and END_PATTERN in line:
-            print(f"\n[Gestor] Patrón de fin '{END_PATTERN}' detectado. Cerrando ARGoS...")
+        if auto_stop and END_SIMULATION_PATTERN in line:
+            print_log(f"\n[Gestor] Patrón de fin '{END_SIMULATION_PATTERN}' detectado. Cerrando ARGoS...", 1, actual_nivel_log)
             argos_proc.terminate()
             break 
 
@@ -145,164 +286,178 @@ def broadcast_output(argos_stdout, tracker_procesos, argos_proc, out_file, mode,
             except Exception:
                 pass
 
-def main():
-    cwd = os.getcwd()
-    print(f"Directorio de trabajo: {cwd}")
+def translate_return_code(code):
+    if code == 0: return "Éxito/Normal"
+    if code == -15 or code == 143: return "SIGTERM (Forzado a cerrarse - Esperado por Gestor)"
+    if code == -9 or code == 137: return "SIGKILL (Asesinado abruptamente)"
+    return f"Desconocido"
 
+def main():
+    parser = argparse.ArgumentParser(description="Orquestador de ARGoS (run_sim.py)")
+    parser.add_argument("--argos", type=str, help="Ruta al archivo .argos", default=None)
+    parser.add_argument("--lua", type=str, help="Ruta al script .lua", default=None)
+    parser.add_argument("--nivel_log", type=int, help="Sobrescribe NIVEL_LOG internamente", default=None)
+    args, _ = parser.parse_known_args()
+
+    actual_argos_file = args.argos if args.argos else DEFAULT_ARGOS_FILE
+    actual_lua_script = args.lua if args.lua else DEFAULT_LUA_SCRIPT
+    actual_nivel_log = args.nivel_log if args.nivel_log is not None else NIVEL_LOG
+
+    cwd = os.getcwd()
+    print_log(f"[Gestor] Directorio de trabajo: {cwd}", 1, actual_nivel_log)
+
+    # Nombres únicos por proceso (evita choques en ejecuciones paralelas)
+    pid = os.getpid()
+    temp_argos_file = f"temp_run_{pid}.argos"
+    
+    # CORRECCIÓN: Guardar el archivo Lua temporal en la MISMA carpeta que el original.
+    # Esto garantiza que los 'require' de Lua relativos funcionen perfectamente.
+    dir_lua_original = os.path.dirname(actual_lua_script)
+    if not dir_lua_original:
+        dir_lua_original = "."
+    nombre_base_lua = os.path.basename(actual_lua_script)
+    temp_lua_file = os.path.join(dir_lua_original, f"temp_{pid}_{nombre_base_lua}")
+
+    # --- AUTO-DESCOMENTADO DE DEPENDENCIAS LUA ---
+    req_lua_funcs = []
+    req_lua_vars = []
+    for t_conf in TRACKERS:
+        script_key = os.path.basename(t_conf["script"])
+        if script_key in TRACKER_DEPENDENCIES:
+            req_lua_funcs.extend(TRACKER_DEPENDENCIES[script_key].get("funciones_lua", []))
+            req_lua_vars.extend(TRACKER_DEPENDENCIES[script_key].get("variables_lua", []))
+
+    if req_lua_funcs or req_lua_vars:
+        print_log(f"[Gestor] Auto-configurando dependencias Lua en archivo temporal...", 1, actual_nivel_log)
+    
     try:
-        tree = ET.parse(ARGOS_FILE)
+        auto_uncomment_lua(actual_lua_script, temp_lua_file, req_lua_funcs, req_lua_vars)
     except FileNotFoundError:
-        print(f"ERROR: No se encontró {ARGOS_FILE}")
+        print_log(f"[Gestor] ERROR: No se encontró {actual_lua_script}", 0, actual_nivel_log)
         return
+
+    # --- MODIFICACIÓN DEL ARBOL XML ---
+    try:
+        tree = ET.parse(actual_argos_file)
+    except FileNotFoundError:
+        print_log(f"[Gestor] ERROR: No se encontró {actual_argos_file}", 0, actual_nivel_log)
+        if os.path.exists(temp_lua_file): os.remove(temp_lua_file)
+        return
+        
     root = tree.getroot()
     
     found_lua = False
     for controller in root.findall('controllers/lua_controller'):
         params = controller.find('params')
         if params is not None:
-            print(f"Cambiando controlador a: {LUA_SCRIPT}")
-            params.set('script', LUA_SCRIPT)
+            print_log(f"[Gestor] Cambiando controlador XML a temporal: {temp_lua_file}", 1, actual_nivel_log)
+            params.set('script', temp_lua_file)
             found_lua = True
             
     if not found_lua:
-        print("Error: No se encontró <lua_controller> o <params> en el XML.")
+        print_log("[Gestor] Error: No se encontró <lua_controller> o <params> en el XML.", 0, actual_nivel_log)
+        if os.path.exists(temp_lua_file): os.remove(temp_lua_file)
         return
 
     vis_node = root.find('visualization')
-    if not USE_VISUALIZATION:
+    if not ENABLE_VISUALIZATION:
         if vis_node is not None:
             root.remove(vis_node)
-            print("Visualización DESACTIVADA. Ejecutando en modo sin interfaz (headless).")
-        else:
-            print("Visualización DESACTIVADA. (No se encontró el nodo en el XML base).")
+            print_log("[Gestor] Visualización DESACTIVADA. Ejecutando en headless.", 1, actual_nivel_log)
     else:
-        if USE_XVFB:
-            print(f"Visualización ACTIVADA. Conectando a la pantalla virtual :99.")
-        else:
-            print("Visualización ACTIVADA. ARGoS abrirá la interfaz gráfica nativa.")
+        if USE_XVFB_VIRTUAL_DISPLAY:
+            print_log(f"[Gestor] Visualización ACTIVADA. (Pantalla virtual :99).", 1, actual_nivel_log)
 
-    temp_argos_file = "temp_run.argos"
     tree.write(temp_argos_file, encoding='utf-8', xml_declaration=True)
 
     output_file_handle = None
-    full_output_path = ""
-    
     if SAVE_OUTPUT_MODE and SAVE_OUTPUT_MODE != "None":
-        os.makedirs(DATA_DIR, exist_ok=True)
-        full_output_path = os.path.join(DATA_DIR, OUTPUT_FILE_NAME)
+        os.makedirs(OUTPUT_DATA_DIR, exist_ok=True)
+        full_output_path = os.path.join(OUTPUT_DATA_DIR, OUTPUT_LOG_FILENAME)
         output_file_handle = open(full_output_path, "w", encoding="utf-8")
 
     run_env = os.environ.copy()
-    if USE_DOT_DECIMALS:
-        run_env["LC_ALL"] = "C"
-    
-    if USE_VISUALIZATION and USE_XVFB:
-        run_env["DISPLAY"] = ":99" 
+    if FORCE_DOT_DECIMALS: run_env["LC_ALL"] = "C"
+    if ENABLE_VISUALIZATION and USE_XVFB_VIRTUAL_DISPLAY: run_env["DISPLAY"] = ":99" 
 
-    argos_cmd = build_argos_command()
+    argos_cmd = build_argos_command(temp_argos_file)
     try:
-        print("Lanzando ARGoS...")
+        print_log("[Gestor] Lanzando ARGoS...", 1, actual_nivel_log)
         argos_proc = subprocess.Popen(
-            argos_cmd, 
-            stdout=subprocess.PIPE, 
-            stderr=subprocess.STDOUT, 
-            text=True, 
-            bufsize=1,
-            env=run_env 
+            argos_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
+            text=True, bufsize=1, env=run_env 
         )
     except FileNotFoundError as e:
-        print("Error al lanzar ARGoS.", e)
-        if os.path.exists(temp_argos_file):
-            os.remove(temp_argos_file)
-        if output_file_handle:
-            output_file_handle.close()
+        print_log(f"[Gestor] Error al lanzar ARGoS: {e}", 0, actual_nivel_log)
+        if os.path.exists(temp_argos_file): os.remove(temp_argos_file)
+        if os.path.exists(temp_lua_file): os.remove(temp_lua_file)
+        if output_file_handle: output_file_handle.close()
         return
 
     tracker_procs = []
     for t_conf in TRACKERS:
         cmd = [sys.executable, t_conf["script"]] + t_conf["args"]
         try:
-            print(f"Lanzando tracker: {t_conf['script']}...")
+            print_log(f"[Gestor] Lanzando tracker: {t_conf['script']}...", 1, actual_nivel_log)
             p = subprocess.Popen(
-                cmd, 
-                stdin=subprocess.PIPE, 
-                stdout=subprocess.PIPE,   # Necesario para escuchar el Heartbeat
-                stderr=subprocess.STDOUT, # Capturar también errores
-                text=True, 
-                bufsize=1,
-                env=run_env
+                cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, 
+                stderr=subprocess.STDOUT, text=True, bufsize=1, env=run_env
             )
             tracker_procs.append(p)
             tracker_activity[p.pid] = time.time()
             
-            # Lanzamos un hilo para escuchar las señales de vida del tracker
-            t = threading.Thread(target=monitor_tracker_stdout, args=(p, p.pid), daemon=True)
+            t = threading.Thread(target=monitor_tracker_stdout, args=(p, p.pid, actual_nivel_log), daemon=True)
             t.start()
-            
         except FileNotFoundError as e:
-            print(f"Error al lanzar {t_conf['script']}:", e)
+            print_log(f"[Gestor] Error al lanzar {t_conf['script']}: {e}", 0, actual_nivel_log)
 
     broadcaster = threading.Thread(
         target=broadcast_output, 
-        args=(argos_proc.stdout, tracker_procs, argos_proc, output_file_handle, SAVE_OUTPUT_MODE, AUTO_STOP_ON_END)
+        args=(argos_proc.stdout, tracker_procs, argos_proc, output_file_handle, SAVE_OUTPUT_MODE, AUTO_STOP_ON_END_PATTERN, actual_nivel_log)
     )
     broadcaster.start()
 
     try:
-        if USE_VISUALIZATION and USE_XVFB:
-            print("ARGoS conectado. Revisa tu cliente VNC para ver la simulación.")
-            
         ret = argos_proc.wait()
-        print(f"\nARGoS finalizó con código {ret}.")
+        desc_codigo = translate_return_code(ret)
+        print_log(f"\n[Gestor] ARGoS finalizó con código {ret} -> {desc_codigo}.", 1, actual_nivel_log)
         
         broadcaster.join()
         
-        # --- LÓGICA DE HEARTBEAT Y TIMEOUT DINÁMICO ---
-        MAX_IDLE_TIME = 120 # Segundos permitidos de silencio absoluto antes de matar un proceso
-        
-        print(f"\n[+] Esperando a que los trackers finalicen sus tareas (Timeout dinámico: {MAX_IDLE_TIME}s de inactividad)...")
+        print_log(f"\n[+] Esperando a que los trackers finalicen sus tareas (Timeout: {MAX_IDLE_TIMEOUT_SEC}s)...", 1, actual_nivel_log)
         
         while tracker_procs:
             for p in list(tracker_procs):
-                # Si el proceso terminó por su cuenta, lo quitamos de la lista
                 if p.poll() is not None:
                     tracker_procs.remove(p)
                     continue
                 
-                # Verificamos si se ha congelado
                 last_active = tracker_activity.get(p.pid, time.time())
-                idle_time = time.time() - last_active
-                
-                if AUTO_STOP_ON_END and idle_time > MAX_IDLE_TIME:
-                    print(f"\n[!] ERROR: El tracker (PID: {p.pid}) se congeló (sin respuesta en {MAX_IDLE_TIME}s). Matando proceso...")
+                if AUTO_STOP_ON_END_PATTERN and (time.time() - last_active) > MAX_IDLE_TIMEOUT_SEC:
+                    print_log(f"\n[!] ERROR: Tracker PID:{p.pid} congelado. Matando...", 0, actual_nivel_log)
                     p.terminate()
-                    try:
-                        p.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        p.kill() # Terminar sin piedad si ni siquiera responde a terminate()
+                    try: p.wait(timeout=5)
+                    except: p.kill()
                     tracker_procs.remove(p)
                     
-            time.sleep(1) # Pequeña pausa para no saturar el CPU
+            time.sleep(1) 
             
-        print("\n[+] Todos los procesos y trackers han finalizado correctamente.")
+        print_log("\n[+] Todos los procesos y trackers han finalizado.", 1, actual_nivel_log)
                 
     except KeyboardInterrupt:
-        print("\nInterrumpido por usuario (Ctrl+C), terminando procesos...")
+        print_log("\n[Gestor] Interrumpido por usuario (Ctrl+C), terminando procesos...", 0, actual_nivel_log)
         for p in tracker_procs:
-            try:
-                p.terminate()
-            except Exception:
-                pass
-        try:
-            argos_proc.terminate()
-        except Exception:
-            pass
+            try: p.terminate()
+            except: pass
+        try: argos_proc.terminate()
+        except: pass
     finally:
         if output_file_handle:
             output_file_handle.close()
-            
         if os.path.exists(temp_argos_file):
             os.remove(temp_argos_file)
+        if os.path.exists(temp_lua_file):
+            os.remove(temp_lua_file)
 
 if __name__ == '__main__':
     main()

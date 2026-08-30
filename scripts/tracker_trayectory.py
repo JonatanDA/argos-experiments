@@ -2,33 +2,24 @@
 """
 tracker_trayectoria.py
 
-- controllers -> Ks1 (Corregir para las demás versiones que aún no se sincronizan con el timer global de la simulación en argos.)
+- controllers compatibles: Ks1 (Corregir para las demás versiones que aún no se sincronizan con el timer global de la simulación en argos.)
 
-1. AGRUPACIÓN EXPLÍCITA POR TICK:
-   El script busca la línea `Timer=XXX` (impreso por Lua) para saber 
-   exactamente dónde empieza y termina un frame de la simulación. Esto garantiza 
-   una reconstrucción perfecta del tiempo.
+DEPENDENCIAS LUA REQUERIDAS:
+- Función: `Print_tracker_trayectory_data(k, x, y, logging)`
+- Variables: `displayed_data`, `PTTD`
 
-2. CONTROL INDEPENDIENTE DE VELOCIDADES (FPS):
-   - SIM_TICKS_PER_SEC  : Los ticks configurados en tu archivo .argos (ej. 10).
-   - LIVE_FPS           : Frecuencia de actualización de la gráfica en vivo (ej. 2 FPS).
-   - VIDEO_FPS          : Cuántos cuadros por segundo de simulación se van a extraer y renderizar.
-
-3. CONTROL DE DURACIÓN DEL VIDEO (SYNC_VIDEO_DURATION):
-   - True : Conserva la duración original. (Ej. Extrae 2 cuadros/seg y el video se reproduce a 2 FPS).
-   - False: Acelera/Ralentiza el video. (Ej. Extrae 2 cuadros/seg pero se reproduce a los 10 FPS 
-            originales de ARGoS, creando una cámara rápida 5x).
-
-4. VIDEO ULTRA-RÁPIDO (PIPING):
-   No se guardan imágenes PNG temporales. Los pixeles viajan directo de la 
-   RAM a FFmpeg por una tubería, reduciendo el desgaste del disco y el tiempo.
+CARACTERÍSTICAS PRINCIPALES:
+1. AGRUPACIÓN EXPLÍCITA POR TICK: Busca `Timer=XXX` para reconstrucción perfecta del tiempo.
+2. CONTROL DE VELOCIDADES (FPS): Independencia entre ticks de ARGoS, live FPS y video frames.
+3. DURACIÓN DEL VIDEO (SYNC_VIDEO_DURATION): Permite cámara rápida/lenta o tiempo real.
+4. VIDEO ULTRA-RÁPIDO (PIPING): Renderizado directo a memoria (RAM -> FFmpeg) sin gastar disco.
 """
 
 # =============================================================================
 # ---------- CONFIGURACIÓN DE VISUALIZACIÓN E INTERFAZ ----------
 # =============================================================================
 # --- Ventana Principal y Gráficas ---
-TITULO_GRAFICA                  = "Datos observados"
+TITULO_GRAFICA                  = "Datos observados por el Robot Aprendiz (Ra)"
 MOSTRAR_TIEMPO_TITULO           = True              # True: Agregar tiempo/ticks transcurridos al título
 UNIDAD_TIEMPO_TITULO            = "segundos"        # "segundos" o "ticks"
 MODO                            = 1                 # 1: Toda la trayectoria, 2: Ventana de muestras (estela)    
@@ -43,7 +34,7 @@ DELETE_ON_TIMEOUT               = True
 # --- CONTROL DE VELOCIDADES Y TIEMPO (FPS) ---
 SIM_TICKS_PER_SEC               = 10                # Ticks de ARGoS por segundo de simulación
 LIVE_FPS                        = 10                # FPS en vivo (Gráfica de Matplotlib)
-VIDEO_FPS                       = 2                 # Cuadros a extraer por segundo de simulación
+VIDEO_FRAMES                    = 2                 # Cuadros a extraer por segundo de simulación
 SYNC_VIDEO_DURATION             = False             # True: Duración real. False: Cámara rápida/lenta
 
 # --- Etiquetas y Nombres ---
@@ -55,8 +46,8 @@ ELIMINAR_SUPERPUESTAS           = False
 MAX_HISTORICAS_TRANSPARENTES    = 3                 
 
 # Listas y reglas de nombres configurables
-PALABRAS_IGNORADAS              = ["maestro"]  # Lista de palabras clave para descartar líneas
-PREFIJOS_NORMALIZABLES          = ["master"]     # Prefijos que se traducen a PREFIX_ETIQUETAS (ej. obj1 -> Rm1)
+PALABRAS_IGNORADAS              = ["maestro"]           # Lista de palabras clave para descartar líneas
+PREFIJOS_NORMALIZABLES          = ["master"]            # Prefijos que se traducen a PREFIX_ETIQUETAS (ej. obj1 -> Rm1)
 PRESERVAR_NOMBRES_LIBRES        = True                  # True: Nombres libres sin número o no listados pasan tal cual
 
 # --- Representación del Observador (Cámara) ---
@@ -73,8 +64,8 @@ VIDEO_DIR                       = "Resultados/Robots/Qupa/Ks1/Trajectory"
 CSV_DIR                         = "Resultados/Robots/Qupa/Ks1/Trajectory/Data"
 
 # --- Video ---
-SAVE_VIDEO                      = True                      
-DEFAULT_OUTFILE                 = "Ks1.mp4"                 
+SAVE_VIDEO                      = False              # True: Guardar video de la trayectoria                      
+DEFAULT_OUTFILE                 = "Ks1.1.mp4"                 
 
 # --- CSV ---
 SAVE_CSV                        = False              # True: Para tener un backup siempre.
@@ -288,7 +279,7 @@ def main():
     parser.add_argument('--ymin', type=float, default=DEFAULT_YMIN)
     parser.add_argument('--ymax', type=float, default=DEFAULT_YMAX)
     parser.add_argument('--live-fps', type=int, default=LIVE_FPS)
-    parser.add_argument('--video-fps', type=int, default=VIDEO_FPS)
+    parser.add_argument('--video-fps', type=int, default=VIDEO_FRAMES)
     parser.add_argument('--outfile', type=str, default=DEFAULT_OUTFILE)
     parser.add_argument('--duration', type=float, default=None)
     parser.add_argument('--mode', type=int, choices=[1,2], default=MODO)
@@ -313,10 +304,10 @@ def main():
     # EJECUCIÓN (NORMAL vs OFFLINE)
     # =========================================================================
     if args.from_csv:
-        print("\n[+] MODO OFFLINE ACTIVADO: Generando video desde CSVs...")
+        print("\n[Tracker Trayectoria] [+] MODO OFFLINE ACTIVADO: Generando video desde CSVs...")
         timeline = load_timeline_from_csv(CSV_DIR)
         if not timeline:
-            print(f"[!] No se encontraron datos CSV en: {CSV_DIR}")
+            print(f"[Tracker Trayectoria] [!] No se encontraron datos CSV en: {CSV_DIR}")
             return
         save_csv = False 
         save_video = True
@@ -519,10 +510,10 @@ def main():
 
         if plt.fignum_exists(fig_main.number):
             if AUTO_CLOSE_WINDOWS:
-                print("Simulación terminada. Cerrando ventana automáticamente...")
+                print("[Tracker Trayectoria] Simulación terminada. Cerrando ventana automáticamente...")
                 plt.close(fig_main)
             else:
-                print("Simulación terminada. Cierra la ventana manualmente para continuar.")
+                print("[Tracker Trayectoria] Simulación terminada. Cierra la ventana manualmente para continuar.")
                 ani.event_source.stop()
                 plt.ioff()
                 plt.show()
@@ -539,7 +530,7 @@ def main():
     # =========================================================================
     if save_csv:
         csv_dir_path = os.path.abspath(CSV_DIR)
-        print(f"\n[+] Guardando archivos CSV...")
+        print(f"\n[Tracker Trayectoria] [+] Guardando archivos CSV...")
         print(f"    - Directorio: {csv_dir_path}")
         os.makedirs(csv_dir_path, exist_ok=True)
         samples = {n: [] for n in names_all}
@@ -558,7 +549,7 @@ def main():
                     for ts, x, y in rows:
                         writer.writerow([iso(ts), f"{ts:.6f}", f"{x:.6f}", f"{y:.6f}"])
             except Exception as e: 
-                print(f" [!] Error guardando CSV para {n}: {e}")
+                print(f"[Tracker Trayectoria] [!] Error guardando CSV para {n}: {e}")
         print(f"    -> CSVs guardados exitosamente.", flush=True)
 
     # =========================================================================
@@ -571,7 +562,7 @@ def main():
 
         total_sim_ticks = len(timeline)
 
-        # -- SIEMPRE extraemos la cantidad de frames dictada por VIDEO_FPS --
+        # -- SIEMPRE extraemos la cantidad de frames dictada por VIDEO_FRAMES --
         sim_time_per_tick = 1.0 / SIM_TICKS_PER_SEC
         video_frame_interval = 1.0 / args.video_fps
 
@@ -603,7 +594,7 @@ def main():
         else:
             playback_fps = SIM_TICKS_PER_SEC 
 
-        print(f"\n[+] Iniciando renderizado de Video Ultra-Rápido (Piping a Memoria)...")
+        print(f"\n[Tracker Trayectoria] [+] Iniciando renderizado de Video Ultra-Rápido (Piping a Memoria)...")
         print(f"    - Tiempo base simulación: {SIM_TICKS_PER_SEC} Ticks/seg")
         print(f"    - Cuadros extraídos:      {args.video_fps} FPS (De los datos originales)")
 
@@ -658,7 +649,7 @@ def main():
                 for line in ffmpeg_proc.stdout:
                     line_str = line.decode('utf-8', errors='ignore').strip()
                     if "frame=" in line_str or "fps=" in line_str or "size=" in line_str:
-                        sys.stdout.write(f"\r      -> {line_str}")
+                        sys.stdout.write(f"\r[Tracker Trayectoria] -> {line_str}")
                         sys.stdout.flush()
 
             monitor_thread = threading.Thread(target=ffmpeg_monitor, daemon=True)
@@ -808,20 +799,20 @@ def main():
                 try:
                     ffmpeg_proc.stdin.write(frame_bytes)
                 except BrokenPipeError:
-                    print("\n[!] FFmpeg cerró la conexión inesperadamente.")
+                    print("\n[Tracker Trayectoria] [!] FFmpeg cerró la conexión inesperadamente.")
                     break
 
                 # Heartbeat
                 if (idx + 1) % 5 == 0 or (idx + 1) == total_visual_frames:
                     porcentaje = ((idx + 1) / total_visual_frames) * 100
-                    sys.stdout.write(f"\r      -> Renderizando frame visual {idx + 1}/{total_visual_frames} ({porcentaje:.1f}%)")
+                    sys.stdout.write(f"\r[Tracker Trayectoria] -> Renderizando frame visual {idx + 1}/{total_visual_frames} ({porcentaje:.1f}%)")
                     sys.stdout.flush() 
 
                 if (idx + 1) % 50 == 0:
                     gc.collect()
 
             print() 
-            print("    -> Generación terminada. Finalizando archivo de video...", flush=True)
+            print("[Tracker Trayectoria] -> Generación terminada. Finalizando archivo de video...", flush=True)
 
             ffmpeg_proc.stdin.close() 
             ffmpeg_proc.wait()        
@@ -832,10 +823,10 @@ def main():
             del fig_save
             gc.collect()
 
-            print(f"\n[+] ¡Video guardado exitosamente!", flush=True)
+            print(f"\n[Tracker Trayectoria] [+] ¡Video guardado exitosamente!", flush=True)
 
         except Exception as e:
-            print(f"\n[!] ERROR CRÍTICO AL GUARDAR EL VIDEO:\n    {e}", flush=True)
+            print(f"\n[Tracker Trayectoria] [!] ERROR CRÍTICO AL GUARDAR EL VIDEO:\n    {e}", flush=True)
 
 if __name__ == '__main__':
     main()

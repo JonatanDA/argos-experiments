@@ -2,11 +2,17 @@
 """
 tracker_calidad_imitacion.py
 
-- controllers: Tr6, Tr7, Ks1 -> Qupa
+- controllers compatibles: Tr6, Tr7, Ks1 -> Qupa
 
-- Alineamiento Circular con Recuperación Geométrica (Heal Pattern).
-- Reincorporación del desglose completo de segmentos en el panel de texto.
-- Corrección estructural de subplots para modos superpuestos (2 paneles) y separados (3 paneles).
+DEPENDENCIAS LUA REQUERIDAS:
+- Necesita que se llame a la función `Print_tracker_calidad_imitacion_data(linea_resumen, is_master)`
+  desde el script del robot en ARGoS para alimentarse de los datos.
+
+CARACTERÍSTICAS PRINCIPALES:
+    Evaluador Geométrico:
+    - Realiza Alineamiento Circular con Recuperación Geométrica (Heal Pattern) del patrón imitado.
+    - Evalúa la métrica general Qi (Calidad de Imitación) basándose en longitud, ángulos y segmentos.
+
 """
 
 import sys
@@ -33,13 +39,13 @@ PLOT_SUPERPUESTAS       = False                             # (Aplica para SHOW_
 # =============================================================================
 # ---------- CONFIGURACIÓN DE GUARDADO DE DATOS ----------
 # =============================================================================
-SAVE_IMAGES             = True                             # True: Guarda capturas de las gráficas de comparación
+SAVE_IMAGES             = False                             # True: Guarda capturas de las gráficas de comparación automáticamente
 IMAGE_DIR               = "Resultados/Robots/Qupa/Ks1/Calidad_Imitacion"    # (Aplica si SAVE_IMAGES=True) Directorio de guardado
 
 # =============================================================================
 # ---------- CONFIGURACIÓN DEL TRACKER Y SISTEMA ----------
 # =============================================================================
-END_PATTERN             = "End_simulation"                  # Frase en consola que finaliza la ejecución
+END_PATTERN             = "End_simulation"                  # Frase clave para dejar de escuchar el tracker
 AUTO_CLOSE_WINDOWS      = False                             # True: Cierra las gráficas automáticamente al terminar
 AUTO_CLOSE_TIME         = 3.0                               # (Aplica si AUTO_CLOSE_WINDOWS=True) Segundos de espera antes de cerrar
 
@@ -48,7 +54,7 @@ AUTO_CLOSE_TIME         = 3.0                               # (Aplica si AUTO_CL
 # =============================================================================
 # --- Control Geométrico ---
 USE_FIRST_ANGLE         = False                             # True: Usa el primer ángulo del patrón, False: Lo fija en 0.0 direccional
-ASSUME_CLOSED_POLYGONS  = True                              # True: Fuerza el cierre geométrico del patrón (Heal Pattern)
+ASSUME_CLOSED_POLYGONS  = True                              # True: Fuerza el cierre geométrico del patrón calculando el giro faltante (Heal Pattern)
 
 # --- Pesos de Ecuación de Calidad de Imitación (Qi) ---
 WEIGHT_L                = 1.0                               # Peso para la métrica de Longitud (Ql)
@@ -68,6 +74,7 @@ def parse_line(line):
     role = parts[1].strip()
     data_str = parts[2].strip()
     
+    # Limpiar colores bash ANSI si los hubiera
     data_str = re.sub(r'\x1b\[[0-9;]*m', '', data_str)
     
     patterns_found = {}
@@ -345,7 +352,7 @@ def main():
                         if p_name != "default" and p_name not in reference_patterns:
                             cleaned_vecs = clean_vectors(vectors, is_original=True)
                             reference_patterns[p_name] = cleaned_vecs
-                            print(f"[+] Nuevo patrón Original guardado: {p_name} ({len(cleaned_vecs)} segmentos válidos)", flush=True)
+                            print(f"[Análisis Calidad] [+] Nuevo patrón Original guardado: {p_name} ({len(cleaned_vecs)} segmentos válidos)", flush=True)
                             update_originals_window()
                             
                 elif role == "Imitado":
@@ -366,8 +373,8 @@ def main():
                                 final_aligned_imit = aligned_imit
                                 
                         if best_orig_name:
-                            print(f"[*] {data['id']} ({imit_name}) imita mejor a '{best_orig_name}' con Qi = {best_qi:.4f}", flush=True)
-                            print(f"[DATA_METRICS] Ql={best_metrics[0]:.4f} Qa={best_metrics[1]:.4f} Qs={best_metrics[2]:.4f} Qi={best_metrics[3]:.4f}", flush=True)
+                            print(f"[Análisis Calidad] [*] {data['id']} ({imit_name}) imita mejor a '{best_orig_name}' con Qi = {best_qi:.4f}", flush=True)
+                            print(f"[Análisis Calidad] [DATA_METRICS] Ql={best_metrics[0]:.4f} Qa={best_metrics[1]:.4f} Qs={best_metrics[2]:.4f} Qi={best_metrics[3]:.4f}", flush=True)
                             
                             if SHOW_COMPARISON_WINDOWS:
                                 create_dashboard(data['id'], imit_name, final_aligned_imit, best_orig_name, reference_patterns[best_orig_name], best_metrics)
