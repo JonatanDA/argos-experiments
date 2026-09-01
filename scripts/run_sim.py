@@ -27,14 +27,12 @@ import re
 #
 # Funciones Lua de Referencia (Para insertar en tus .lua si no están):
 #
-# displayed_data = 3 -- 1: Apprentice, 2: Global Master, 3: Ambos
-# PTTD = false
 # function Print_tracker_trayectory_data(k, x, y, logging) ... end
 # function Print_tracker_calidad_imitacion_data(linea_resumen, is_master) ... end
 # function Print_tracker_varianza(k, var) ... end
 # function evaluator_otsu(separacion, avance) ... end
 # function evaluator_ruido(raw_angle, raw_dist, noisy_angle, noisy_dist) ... end
-#
+
 TRACKER_DEPENDENCIES = {
     "tracker_trayectory.py": {
         "descripcion": "Rastrea y grafica la trayectoria 2D (x,y) global del master y/o aprendiz.",
@@ -73,29 +71,44 @@ TRACKER_DEPENDENCIES = {
 # DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/St.argos"   
 # DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/St10.lua" 
 
-# DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Tr.argos"   
-# DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Tr6.lua" 
+DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Tr.argos"   
+DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Tr6.lua" 
 
 # DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Tr.argos"   
 # DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Tr7/Tr7.lua" 
 
-DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Ks.argos"   
-DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Ks1/Ks1.lua" 
+# DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Ks.argos"   
+# DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Ks1/Ks1.lua" 
 
 # =============================================================================
-# ---------- CONFIGURACIÓN DE VERBOSIDAD ----------
+# ---------- CONFIGURACIÓN DE TRACKERS ACTIVOS ----------
 # =============================================================================
-# 0: Silencioso total (solo info inicial y conteo de exps). Todo pasa oculto. Ideal para pruebas masivas.
-# 1: Recomendado (Muestra eventos vitales: inicios, cierres, guardados de evaluadores).
-# 2: Detallado (Modo 1 + Prints específicos etiquetados de los Trackers, sin mezclar salidas ruidosas).
-# 3: Todo (Modo 2 + Datos puros de ARGoS como variables continuas, timers, alertas internas, etc).
-NIVEL_LOG = 2
-
-# =============================================================================
-# ---------- CONFIGURACIÓN DE EJECUCIÓN Y MOTOR DE ARGOS ----------
-# =============================================================================
-USE_STDBUF_BUFFERING            = True                                
-ARGOS_BASE_COMMAND              = ["argos3", "-c"] # Se añadirá el archivo dinámico luego
+TRACKERS = [    
+    # {
+    #     "script": "scripts/tracker_trayectory.py",
+    #     "args": []
+    # },
+    # {
+    #     "script": "scripts/tracker_calidad_imitacion.py",
+    #     "args": []
+    # },
+    # {
+    #     "script": "scripts/tracker_varianza.py",
+    #     "args": []
+    # },
+    # {
+    #     "script": "scripts/tracker_imitation_chain.py",
+    #     "args": []
+    # },
+    # {
+    #     "script": "scripts/tracker_imitated_pattern.py",
+    #     "args": []
+    # },
+    # {
+    #     "script": "scripts/tracker_clusters.py",
+    #     "args": []
+    # }
+]
 
 # =============================================================================
 # ---------- CONFIGURACIÓN DE VISUALIZACIÓN E INTERFAZ ----------
@@ -105,6 +118,12 @@ ENABLE_VISUALIZATION            = False              # True: Muestra la ventana 
 # --- Control de Pantalla Virtual (Xvfb) ---
 USE_XVFB_VIRTUAL_DISPLAY        = False             
 XVFB_DISPLAY_RESOLUTION         = "3840x2160x24" 
+
+# =============================================================================
+# ---------- CONFIGURACIÓN DE EJECUCIÓN Y MOTOR DE ARGOS ----------
+# =============================================================================
+USE_STDBUF_BUFFERING            = True                                
+ARGOS_BASE_COMMAND              = ["argos3", "-c"] # Se añadirá el archivo dinámico luego
 
 # =============================================================================
 # ---------- CONFIGURACIÓN DE SISTEMA Y LOCALIZACIÓN ----------
@@ -125,35 +144,15 @@ END_SIMULATION_PATTERN          = "End_simulation"
 AUTO_STOP_ON_END_PATTERN        = True              
 MAX_IDLE_TIMEOUT_SEC            = 120               
 
+
 # =============================================================================
-# ---------- CONFIGURACIÓN DE TRACKERS ACTIVOS ----------
+# ---------- CONFIGURACIÓN DE VERBOSIDAD ----------
 # =============================================================================
-TRACKERS = [    
-    {
-        "script": "scripts/tracker_trayectory.py",
-        "args": []
-    },
-    {
-        "script": "scripts/tracker_calidad_imitacion.py",
-        "args": []
-    },
-    {
-        "script": "scripts/tracker_varianza.py",
-        "args": []
-    },
-    # {
-    #     "script": "scripts/tracker_imitation_chain.py",
-    #     "args": []
-    # },
-    # {
-    #     "script": "scripts/tracker_imitated_pattern.py",
-    #     "args": []
-    # },
-    # {
-    #     "script": "scripts/tracker_clusters.py",
-    #     "args": []
-    # }
-]
+# 0: Silencioso total (solo info inicial y conteo de exps). Todo pasa oculto. Ideal para pruebas masivas.
+# 1: Recomendado (Muestra eventos vitales: inicios, cierres, guardados de evaluadores).
+# 2: Detallado (Modo 1 + Prints específicos etiquetados de los Trackers, sin mezclar salidas ruidosas).
+# 3: Todo (Modo 2 + Datos puros de ARGoS como variables continuas, timers, alertas internas, etc).
+NIVEL_LOG = 0
 
 # =============================================================================
 # Diccionario global para rastrear la última vez que un tracker dio señales de vida
@@ -252,8 +251,6 @@ def monitor_tracker_stdout(p, p_pid, actual_nivel_log):
         tracker_activity[p_pid] = time.time() 
 
 def broadcast_output(argos_stdout, tracker_procesos, argos_proc, out_file, mode, auto_stop, actual_nivel_log):
-    argos_tags = ["[INFO]", "[WARNING]", "[ERR]", "[FATAL]"]
-
     for line in argos_stdout:
         if actual_nivel_log >= 3:
             with print_lock:
@@ -261,13 +258,14 @@ def broadcast_output(argos_stdout, tracker_procesos, argos_proc, out_file, mode,
                 sys.stdout.flush()
         
         if out_file and mode:
-            is_log = any(tag in line for tag in argos_tags)
+            # Optimización: Direct string matching instead of loop comprehesion
+            is_log = "[INFO]" in line or "[WARNING]" in line or "[ERR]" in line or "[FATAL]" in line
             if mode == "ALL" or (mode == "LOG" and is_log) or (mode == "PRINT" and not is_log):
                 out_file.write(line)
             out_file.flush() 
         
         for p in tracker_procesos:
-            if p.stdin and p.poll() is None: 
+            if p.poll() is None:  # Eliminado el p.stdin extra (es rápido)
                 try:
                     p.stdin.write(line)
                     p.stdin.flush()
@@ -310,8 +308,6 @@ def main():
     pid = os.getpid()
     temp_argos_file = f"temp_run_{pid}.argos"
     
-    # CORRECCIÓN: Guardar el archivo Lua temporal en la MISMA carpeta que el original.
-    # Esto garantiza que los 'require' de Lua relativos funcionen perfectamente.
     dir_lua_original = os.path.dirname(actual_lua_script)
     if not dir_lua_original:
         dir_lua_original = "."

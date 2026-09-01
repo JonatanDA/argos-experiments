@@ -29,7 +29,7 @@ DEFAULT_XMAX                    =  1.5
 DEFAULT_YMIN                    = -1.5
 DEFAULT_YMAX                    =  1.5
 DEAD_TIME_LIMIT                 = 1                 
-DELETE_ON_TIMEOUT               = True              
+DELETE_ON_TIMEOUT               = False              
 
 # --- CONTROL DE VELOCIDADES Y TIEMPO (FPS) ---
 SIM_TICKS_PER_SEC               = 10                # Ticks de ARGoS por segundo de simulación
@@ -60,12 +60,12 @@ ALTURA_CAMARA                   = 0.3
 # ---------- CONFIGURACIÓN DE GUARDADO DE DATOS ----------
 # =============================================================================
 # --- Rutas de Directorios ---
-VIDEO_DIR                       = "Resultados/Robots/Qupa/Ks1/Trajectory"
+VIDEO_DIR                       = "Resultados/Robots/Qupa/Tr6/Trajectory.1"
 CSV_DIR                         = "Resultados/Robots/Qupa/Ks1/Trajectory/Data"
 
 # --- Video ---
 SAVE_VIDEO                      = False              # True: Guardar video de la trayectoria                      
-DEFAULT_OUTFILE                 = "Ks1.1.mp4"                 
+DEFAULT_OUTFILE                 = "Tr6.1.mp4"                 
 
 # --- CSV ---
 SAVE_CSV                        = False              # True: Para tener un backup siempre.

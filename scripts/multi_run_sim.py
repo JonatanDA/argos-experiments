@@ -50,15 +50,19 @@ EVALUATOR_DEPENDENCIES = {
 # ---------- 2. CONFIGURACIÓN DEL EXPERIMENTO (VARIABLES A BARRER) ----------
 # =============================================================================
 NUM_PASOS_N      = 5   
-NUM_EXP_M        = 2   
+NUM_EXP_M        = 3   
 
 # 1: Simultáneo (Avanza las variables al mismo tiempo). 2: Combinatorio (Todas las mezclas posibles)
 MODO_EVALUACION  = 1
 
 # Diccionario de variables a inyectar en el código Lua con sus rangos (Mínimo, Máximo)
 VARIABLES_A_EVALUAR = {
-    "NOISE_BASE_RADIUS": (0.00, 0.1), # -> evaluator_ruido&Qi
-    # "speed_dem": (5, 30)            # -> evaluator_otsu
+    "NOISE_LEVEL_DIST"  : (0.0, 0.05), # -> evaluator_ruido&Qi -> controllers compatibles: Qupa -> Tr6, Tr7
+    "NOISE_LEVEL_ANGLE" : (0.0, 0.25),
+
+    # "NOISE_BASE_RADIUS": (0.00, 0.5),  # -> evaluator_ruido&Qi -> controllers compatibles: Qupa ->  Ks1
+
+    # "speed_dem": (5, 30)               # -> evaluator_otsu     -> controllers compatibles: Qupa -> Tr6, Tr7, Ks1
 }
 
 # =============================================================================
@@ -76,9 +80,16 @@ MULTI_EVALUATORS = [
 ]
 # =============================================================================
 # ---------- 4. CONFIGURACIÓN DE ARCHIVOS Y RUTAS ----------
-# =============================================================================
-ARGOS_SCRIPT     = "experiments/Qupa/Argos/Ks.argos"         
-LUA_SCRIPT       = "experiments/Qupa/Controller/Ks1/Ks1.lua" 
+# # =============================================================================
+# ARGOS_SCRIPT     = "experiments/Qupa/Argos/Tr.argos"         
+# LUA_SCRIPT       = "experiments/Qupa/Controller/Tr6.lua" 
+
+ARGOS_SCRIPT     = "experiments/Qupa/Argos/Tr.argos"         
+LUA_SCRIPT       = "experiments/Qupa/Controller/Tr7/Tr7.lua" 
+
+# ARGOS_SCRIPT     = "experiments/Qupa/Argos/Ks.argos"         
+# LUA_SCRIPT       = "experiments/Qupa/Controller/Ks1/Ks1.lua" 
+
 RUN_SIM_SCRIPT   = "scripts/run_sim.py"                      
 TIMEOUT_SIMULACION = 90                                      
 
@@ -89,7 +100,7 @@ TIMEOUT_SIMULACION = 90
 # 1: Recomendado (Muestra eventos vitales: inicios, cierres, guardados de evaluadores).
 # 2: Detallado (Modo 1 + Prints específicos etiquetados de los Trackers, sin mezclar salidas ruidosas).
 # 3: Todo (Modo 2 + Datos puros de ARGoS como variables continuas, timers, alertas internas, etc).
-NIVEL_LOG = 2
+NIVEL_LOG = 3
 
 def print_log(mensaje, nivel_minimo=0, end="\n"):
     if NIVEL_LOG >= nivel_minimo:
@@ -232,7 +243,6 @@ def main():
         script_name = ev["script"]
         if script_name in EVALUATOR_DEPENDENCIES:
             req_lua_funcs.update(EVALUATOR_DEPENDENCIES[script_name].get("lua_functions", []))
-            # CORRECCIÓN: Se usa script_name en lugar de script_key
             req_lua_vars.update(EVALUATOR_DEPENDENCIES[script_name].get("lua_variables", []))
             req_trackers.update(EVALUATOR_DEPENDENCIES[script_name].get("run_sim_trackers", []))
 
@@ -322,12 +332,11 @@ def main():
                         if NIVEL_LOG == 3:
                             sys.stdout.write(linea) 
                         elif NIVEL_LOG == 2:
-                            tags_relevantes = ["[Gestor]", "[+]", "[Análisis Calidad]", "ARGoS finalizó"]
-                            if any(tag in linea for tag in tags_relevantes):
+                            # Optimización: Direct string matching instead of comprehesion
+                            if "[Gestor]" in linea or "[+]" in linea or "[Análisis Calidad]" in linea or "ARGoS finalizó" in linea:
                                 sys.stdout.write(linea)
                         elif NIVEL_LOG == 1:
-                            tags_clave = ["[Gestor]", "[+] Esperando", "[+] Todos los procesos", "ARGoS finalizó"]
-                            if any(tag in linea for tag in tags_clave):
+                            if "[Gestor]" in linea or "[+] Esperando" in linea or "[+] Todos los procesos" in linea or "ARGoS finalizó" in linea:
                                 sys.stdout.write(linea)
 
                 proc_sim.wait()

@@ -112,8 +112,8 @@ USE_ANGLE_NOISE = true         -- Ruido en la medición del ángulo
 USE_BIAS = false                -- Error sistemático (ej. sensor mal calibrado +2cm siempre)
 
 -- Parámetros de Intensidad
-NOISE_LEVEL_DIST    = 0.0100       -- % de error proporcional a la distancia
-NOISE_LEVEL_ANGLE   = 1.0500       -- ±2 grados de desviación estándar
+NOISE_LEVEL_DIST    = 0.0200       -- % de error proporcional a la distancia
+NOISE_LEVEL_ANGLE   = 0.1000       -- ±2 grados de desviación estándar
 OUTLIER_PROB        = 0.01           -- 1% de probabilidad de fallo catastrófico
 BIAS_OFFSET         = 1.5               -- Cm extra que agrega el sensor por defecto (si USE_BIAS es true)
 
@@ -123,7 +123,7 @@ bigger = 1  -- Factor de escala para ajustar el tamaño de las figuras predefini
 if robot.id == "Qupa4" then
 
 elseif robot.id == "Qupa1" or robot.id == "Qupa2" or robot.id == "Qupa3" or robot.id == "Qupa5" then
-    figura = "Pentágono_irregular" -- "triangulo_regular" -- "octagono" -- "triangulo_irregular_1" --"Pentágono_irregular"  -- "Heptágono"-- "" -- "trayectoria_1" 
+    figura = "triangulo_regular" -- "triangulo_regular" -- "octagono" -- "triangulo_irregular_1" --"Pentágono_irregular"  -- "Heptágono"-- "" -- "trayectoria_1" 
     bigger = 1
 else
     figura = "triangulo_regular" -- "triangulo_regular" -- "octagono" -- "triangulo_irregular_1" --"Pentágono_irregular"  -- "Heptágono"-- "" -- "trayectoria_1" 
@@ -132,7 +132,7 @@ end
 
 -- Banderas de loggeo
 
-OBSERVER_LOG_MODE   = 1 -- 0: Sin logs, 1: Logs detallados 
+OBSERVER_LOG_MODE   = 0 -- 0: Sin logs, 1: Logs detallados 
 DS_LOG_MODE         = 0 -- 0: Sin logs, 1: Logs detallados, 2: Solo resumen final, 3: Resumen + puntos en segmento, 4: Solo parámetros de Otsu
 FVS_LOG_MODE        = 0 -- 0: Sin logs, 1: Logs detallados, 2: Solo resumen final, 3: Resumen + detalles de filtrado
 -------------------------------------------------------------------------------------------------------------------------------------
@@ -144,98 +144,110 @@ FVS_LOG_MODE        = 0 -- 0: Sin logs, 1: Logs detallados, 2: Solo resumen fina
 -------------------------------------------------------------------------------------------------------------------------------------
 
 -------------------------------------------------------------------------------------------------------------------------------------
--- Funciones para los trackers
+-- Funciones para los trackers 
+    -- Estas funciones se mantienen comentadas por defecto. Si se requieren se llaman en arun_sim.py y este las descomenta para que se ejecuten automaticamente.
 -------------------------------------------------------------------------------------------------------------------------------------
 
-displayed_data  = 3 --1 Datos obtenidos por el apprentice. 2. Datos globales del movimiento del master, 3: Ambos
-function Print_tracker_trayectory_data(k, x, y)
+-- displayed_data  = 3 --1 Datos obtenidos por el apprentice. 2. Datos globales del movimiento del master, 3: Ambos
+-- function Print_tracker_trayectory_data(k, x, y,logging)
 
-    if type(k) == "number" then
+--     if type(k) == "number" then
 
-        if displayed_data == 1 or displayed_data == 3 then
-            print("Qupa" .. k .. " & " .. x .. " , " .. y)
-        end
+--         if displayed_data == 1 or displayed_data == 3 then
+--             print("Master" .. k .. " & " .. x .. " , " .. y)
+--             if logging then 
+--                 log("Master" .. k .. " & " .. x .. " , " .. y)
+--             end
 
-    elseif type(k) == "string" then
+--         end
 
-        -- Obtener el vector de posición inicial
-        local x = robot.positioning.position.x
-        local y = robot.positioning.position.y
+--     elseif type(k) == "string" then
+--         -- Obtener el vector de posición inicial
+--         local x = robot.positioning.position.x
+--         local y = robot.positioning.position.y
 
-        if displayed_data == 2 or displayed_data == 3 then
-            if robot.id == "Qupa4" then
-    
-                print("Qupa400 & " .. x .. " , " .. y)  -- Imprime los datos globales del movimiento del Observador
-            else     
-                --print(robot.id .. " & " .. x .. " , " .. y)  
-            end
-        end
-    end
-end
+--         if displayed_data == 2 or displayed_data == 3 then
+--             if k == "Qupa4" then
+--                 print("Apprentice & " .. x .. " , " .. y)  -- Imprime los datos globales del movimiento del Observador
+--             elseif k == "App" then
+--                 print("Ra".. " & " .. x .. " , " .. y)  
+--             end
+--         end
+--     end
+-- end
 
-function Print_tracker_calidad_imitacion_data(linea_resumen, is_master)
+-- function Print_tracker_calidad_imitacion_data(linea_resumen, is_master)
 
-    if is_master == 0 then
+--     if is_master == 0 then
 
-        print(linea_resumen)
-    else
+--         print(linea_resumen)
+--     else
 
-        -- Función auxiliar para separar la parte entera y los dos decimales de un número
-        local function split_num(val)
-            local sign = val < 0 and "-" or ""
-            local abs_val = math.abs(val)
-            local int_part = math.floor(abs_val)
-            local dec_part = math.floor((abs_val - int_part) * 100 + 0.5)
+--         -- Función auxiliar para separar la parte entera y los dos decimales de un número
+--         local function split_num(val)
+--             local sign = val < 0 and "-" or ""
+--             local abs_val = math.abs(val)
+--             local int_part = math.floor(abs_val)
+--             local dec_part = math.floor((abs_val - int_part) * 100 + 0.5)
             
-            -- Ajuste por si el redondeo sube el decimal a 100
-            if dec_part >= 100 then
-                int_part = int_part + 1
-                dec_part = dec_part - 100
-            end
+--             -- Ajuste por si el redondeo sube el decimal a 100
+--             if dec_part >= 100 then
+--                 int_part = int_part + 1
+--                 dec_part = dec_part - 100
+--             end
             
-            -- Retorna dos valores: la parte entera (con su signo) y la parte decimal a 2 dígitos
-            return string.format("%s%d", sign, int_part), string.format("%02d", dec_part)
-        end
+--             -- Retorna dos valores: la parte entera (con su signo) y la parte decimal a 2 dígitos
+--             return string.format("%s%d", sign, int_part), string.format("%02d", dec_part)
+--         end
         
-        -- Obtenemos el patrón correspondiente a la variable global 'figura' actual
-        local data = original_params()
+--         -- Obtenemos el patrón correspondiente a la variable global 'figura' actual
+--         local data = original_params()
         
-        -- Verificamos que se haya encontrado un patrón válido
-        if not data or not data.params then 
-            log(robot.id .. " & Error: No se encontró un patrón asignado.")
-            return 
-        end
+--         -- Verificamos que se haya encontrado un patrón válido
+--         if not data or not data.params then 
+--             log(robot.id .. " & Error: No se encontró un patrón asignado.")
+--             return 
+--         end
         
-        local nombre_patron = data.name or "Desconocido"
-        -- Iniciamos la cadena con el formato solicitado
-        local resultado = robot.id .. " & Original&" .. nombre_patron
+--         local nombre_patron = data.name or "Desconocido"
+--         -- Iniciamos la cadena con el formato solicitado
+--         local resultado = robot.id .. " & Original&" .. nombre_patron
         
-        local params = data.params
-        for j = 1, #params do
-            local dist = params[j][1]
-            local ang = params[j][2]
+--         local params = data.params
+--         for j = 1, #params do
+--             local dist = params[j][1]
+--             local ang = params[j][2]
             
-            -- Separamos enteros y decimales de la distancia y el ángulo
-            local dist_i, dist_d = split_num(dist)
-            local ang_i, ang_d = split_num(ang)
+--             -- Separamos enteros y decimales de la distancia y el ángulo
+--             local dist_i, dist_d = split_num(dist)
+--             local ang_i, ang_d = split_num(ang)
             
-            -- Concatenamos el paso con el formato (distI,distD,angI,angD)
-            resultado = resultado .. string.format("(%s,%s,%s,%s)", dist_i, dist_d, ang_i, ang_d)
+--             -- Concatenamos el paso con el formato (distI,distD,angI,angD)
+--             resultado = resultado .. string.format("(%s,%s,%s,%s)", dist_i, dist_d, ang_i, ang_d)
             
-            -- Agregamos la coma separadora entre pasos (excepto en el último)
-            if j < #params then
-                resultado = resultado .. ","
-            end
-        end
-        -- Imprimimos el resultado final en la terminal de ARGoS
-        log(resultado)
-    end
-end
+--             -- Agregamos la coma separadora entre pasos (excepto en el último)
+--             if j < #params then
+--                 resultado = resultado .. ","
+--             end
+--         end
+--         -- Imprimimos el resultado final en la terminal de ARGoS
+--         log(resultado)
+--     end
+-- end
 
-function Print_tracker_varianza(k, var, separacion, avance)
-    --print( "Maestro"..k.." & " .. var)                -- Datos para el anális de varianza en los datos obtenidos por el apprentice. Script -> run_sim.py
-   -- print( "Otsu & " .. separacion.." , "..avance)    -- Datos para el anális del método de otsu a distintos valores de velocidad del master: speed_dem  -> Script: master_evluator.py
-end
+-- function Print_tracker_varianza(k, var)
+--     print( "Maestro"..k.." & " .. var)             -- Datos para el anális de varianza en los datos obtenidos por el observador. Script -> sun_sim.py
+-- end
+
+-- function evaluator_otsu(separacion, avance)
+--     print( "Otsu & " .. separacion.." , "..avance) -- Datos para el anális del método de otsu a distintos valores de velocidad del demostrador: speed_dem  -> Script: master_evluator.py
+-- end
+
+-- function evaluator_ruido (raw_angle, raw_dist, noisy_angle, noisy_dist)
+--     log("timer = "..timer)
+--     log("Blob detectado: angulo = " .. raw_angle .. ", distancia = " .. raw_dist)
+--     log("Blob ruidoso detectado: angulo = " .. noisy_angle .. ", distancia = " .. noisy_dist)
+-- end
 
 -------------------------------------------------------------------------------------------------------------------------------------
 -- Función que se ejecuta al inicio de la simulación
@@ -245,7 +257,7 @@ function init()
     
     robot.colored_blob_omnidirectional_camera.enable()
     determinar_rol()
-    Print_tracker_calidad_imitacion_data(robot.id, is_master)
+    if Print_tracker_calidad_imitacion_data then Print_tracker_calidad_imitacion_data(robot.id, is_master) end
 end
 
 -------------------------------------------------------------------------------------------------------------------------------------
@@ -254,14 +266,15 @@ end
 
 timer = 1
 function step()
-
+    
+    if robot.id == "Qupa4" and Print_tracker_trayectory_data then print("Timer="..timer) end
     if is_master == 1 then
         master() -- Ejecutar si es master
     else
         apprentice()
     end
 
-    if timer == max_time then
+    if robot.id == "Qupa4" and timer == max_time then
         print("End_simulation")
     end
 
@@ -447,8 +460,9 @@ function patron_imitado(params_P)
                 move(valor1, valor2, speed_dem, 10, false, robot.id)
                 -- log("\nDistancia a recorrer en el segmento "..indice.." = ".. params[indice][1]..", Distancia actual: "..move_distance..", "..robot.id)
                 -- log("Angulo del segmento = "..indice.." = ".. params[indice][2]..", Angulo actual: "..move_angle*180/math.pi ..", "..robot.id)
-                Print_tracker_trayectory_data(robot.id,0,0)
-
+                if robot.id == "Qupa4" then 
+                    if Print_tracker_trayectory_data then Print_tracker_trayectory_data("App", 0, 0) end
+                end
                 setleds("yellow")
 
                 if c1 == 2 then
@@ -571,7 +585,7 @@ function check_patience_and_reconstruct()
         
         if exito then
             ParameterStorage.set_done()
-            Print_tracker_calidad_imitacion_data(linea_resumen, is_master)
+            if Print_tracker_calidad_imitacion_data then Print_tracker_calidad_imitacion_data(linea_resumen, is_master) end
             for _, patron in ipairs(nuevos_patrones) do
                 table.insert(all_params, patron)
             end
@@ -672,6 +686,8 @@ end
 -- ============================================================================
 srt_c1 = 0
 function store_relative_positions()
+
+    if Print_tracker_trayectory_data then Print_tracker_trayectory_data("Qupa4", 0, 0) end
     -- Control de paciencia y reconstrucción global dinámica
     check_patience_and_reconstruct()
 
@@ -710,6 +726,8 @@ function store_relative_positions()
             local noisy_dist, noisy_angle = NoiseManager.aplicar_ruido(raw_dist, raw_angle, noise_cfg) 
             
             local r, g, b = blob.color.red, blob.color.green, blob.color.blue
+            
+            if evaluator_ruido then evaluator_ruido (raw_angle, raw_dist, noisy_angle, noisy_dist) end
 
             if r > 200 and g > 200 and b < 100 then table.insert(yellow_blobs, {angle = noisy_angle, distance = noisy_dist, type = 2})
             elseif r < 100 and g > 200 and b < 100 then table.insert(green_blobs, {angle = noisy_angle, distance = noisy_dist})
@@ -752,8 +770,8 @@ function store_relative_positions()
                                 srt_anterior_data[k].type = new_data.type 
                                 
                                 local x,y = math_helper.polarACartesianoPAR(srt_anterior_data[k].distance /100, srt_anterior_data[k].angle * math.pi / 180)
-                                Print_tracker_trayectory_data(k, x, y)
-                                
+                                if Print_tracker_trayectory_data then Print_tracker_trayectory_data(k, x, y, false) end
+
                                 fallos_maestros[k] = nil 
                                 updated_anterior_indices[k] = true
                                 matched_new_indices[j] = true
@@ -795,7 +813,7 @@ function store_relative_positions()
             
             if is_lost then
                 local razon = fallos_maestros[k] or "Sin blobs amarillos cerca."
-                log("\n[!] Maestro " .. k .. " PERDIDO. Razón: " .. razon)
+                --log("\n[!] Maestro " .. k .. " PERDIDO. Razón: " .. razon)
             end
             
             if (is_lost or is_finished) and track and not track.processed then

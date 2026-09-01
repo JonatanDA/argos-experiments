@@ -136,10 +136,11 @@ AL_LOG_MODE         = 0 -- 0: Sin logs, 1: Información sobre el Active Learning
 -------------------------------------------------------------------------------------------------------------------------------------
 
 -------------------------------------------------------------------------------------------------------------------------------------
--- Funciones para los trackers
+-- Funciones para los trackers 
+    -- Estas funciones se mantienen comentadas por defecto. Si se requieren se llaman en arun_sim.py y este las descomenta para que se ejecuten automaticamente.
 -------------------------------------------------------------------------------------------------------------------------------------
 
-displayed_data  = 3 --1 Datos obtenidos por el apprentice. 2. Datos globales del movimiento del master, 3: Ambos
+--displayed_data  = 3 --1 Datos obtenidos por el apprentice. 2. Datos globales del movimiento del master, 3: Ambos
 -- function Print_tracker_trayectory_data(k, x, y,logging)
 
 --     if type(k) == "number" then
@@ -444,7 +445,6 @@ function Ejecutar_comportamiento(params_P)
                 -- Solo avanzamos la lógica del patrón si NO estamos pausados
                 if not master_paused then
                     if robot.id == "Qupa4" then 
-
                         if Print_tracker_trayectory_data then Print_tracker_trayectory_data("App", 0, 0) end
                     end
                     setleds("yellow")
@@ -755,7 +755,6 @@ function store_relative_positions()
             local r, g, b = blob.color.red, blob.color.green, blob.color.blue
 
             if evaluator_ruido then evaluator_ruido (raw_angle, raw_dist, noisy_angle, noisy_dist) end
-
 
             if r > 200 and g > 200 and b < 100 then table.insert(yellow_blobs, {angle = noisy_angle, distance = noisy_dist, type = 2})
             elseif r < 100 and g > 200 and b < 100 then table.insert(green_blobs, {angle = noisy_angle, distance = noisy_dist})

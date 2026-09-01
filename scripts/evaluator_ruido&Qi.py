@@ -2,10 +2,13 @@
 """
 evaluator_ruido&Qi.py
 
+controllers compatibles: Ks1
+
 Evaluador pasivo (Requiere ser lanzado por multi_run_sim.py para recibir datos por stdin).
 - Escucha la salida de multi_run_sim.
 - Limpia caracteres ANSI (colores de terminal) para leer correctamente el EMP/RMSE y Qi.
-- Muestra una interfaz combinada EN VIVO (Gráfica de barras + Tabla).
+- Muestra una interfaz en vivo modular (Gráfica de barras, Gráfica de líneas, Tabla).
+- Soporta variables de ruido emparejadas (Modo 1 de multi_run_sim).
 - Calcula la relación de error cuadrático por inyección de ruido estadístico.
 
 DEPENDENCIAS LUA REQUERIDAS:
@@ -27,23 +30,23 @@ import matplotlib.pyplot as plt
 # =============================================================================
 # ---------- 1. VARIABLES DE CONTROL ----------
 # =============================================================================
-# ¿Quieres ver cómo se dibujan los gráficos y la tabla en tiempo real?
-MOSTRAR_EN_VIVO          = True  
+# ¿Qué ventanas quieres ver en tiempo real durante la simulación?
+MOSTRAR_BARRAS           = True
+MOSTRAR_LINEAS           = True
+MOSTRAR_TABLA            = True
 
-# ¿Quieres que se guarden los resultados (Imagen combinada y CSV) al terminar todas las configs?
-GUARDAR_RESULTADOS       = True  
+# ¿Qué archivos quieres que se guarden al finalizar todos los experimentos?
+GUARDAR_BARRAS           = True
+GUARDAR_LINEAS           = True
+GUARDAR_TABLA            = True
+GUARDAR_CSV              = True
 
 # ¿Dónde quieres guardar los archivos resultantes del experimento de ruido?
-CARPETA_RESULTADOS       = "Resultados/Ruido_Estadistico"
+CARPETA_RESULTADOS       = "Resultados/Robots/Qupa/Tr6/Evaluator_Ruido"
 
 # Patrones geométricos base contra los cuales contrastará la Calidad (Qi) 
-# Deben existir exactamente con este nombre en la salida del tracker.
 PATRON_1         = "triangulo"
 PATRON_2         = "Pentágono_irregular"
-
-# Rutas dinámicas donde se guardarán los resultados si GUARDAR_RESULTADOS = True
-CSV_OUTPUT       = f"{CARPETA_RESULTADOS}/analisis_ruido.csv"
-GRAFICA_OUTPUT   = f"{CARPETA_RESULTADOS}/grafica_y_tabla_ruido.png"
 
 # =============================================================================
 # ---------- 2. EXPRESIONES REGULARES ----------
@@ -59,75 +62,123 @@ REGEX_ORIGINAL = re.compile(r"Blob detectado:\s*angulo\s*=\s*([-+]?[0-9]*\.?[0-9
 REGEX_RUIDOSO  = re.compile(r"Blob ruidoso detectado:\s*angulo\s*=\s*([-+]?[0-9]*\.?[0-9]+),\s*distancia\s*=\s*([-+]?[0-9]*\.?[0-9]+)")
 
 # =============================================================================
-# ---------- 3. INTERFAZ GRÁFICA EN VIVO ----------
+# ---------- 3. FUNCIONES DE APOYO Y DIBUJADO ----------
 # =============================================================================
-def actualizar_interfaz_vivo(fig, ax_bar, ax_table, resultados, var_name):
-    """ Dibuja el gráfico de barras y la tabla de resumen en la misma ventana de manera concurrente """
+def parse_variables(params_dict):
+    """ Convierte un diccionario de variables en cadenas de texto legibles para ejes y tablas """
+    keys = list(params_dict.keys())
+    vals = list(params_dict.values())
     
-    # 1. ACTUALIZAR GRÁFICA DE BARRAS (PANEL SUPERIOR)
-    ax_bar.clear()
-    labels_x  = [f"{r[var_name]:.3f}" for r in resultados]
+    if len(keys) > 1:
+        keys_str = " / ".join(keys)
+        vals_str = " / ".join([f"{v:.3f}" for v in vals])
+    elif len(keys) == 1:
+        keys_str = keys[0]
+        vals_str = f"{vals[0]:.3f}"
+    else:
+        keys_str = "Variable"
+        vals_str = "0.000"
+        
+    return keys_str, vals_str
+
+def dibujar_graficas(resultados, var_keys_str, ax_bar=None, ax_line=None, ax_table=None):
+    """ Dibuja dinámicamente en los ejes que se le pasen (sirve para vista en vivo y para guardado) """
+    
+    labels_x  = [r['val_str'] for r in resultados]
     x_pos     = range(len(labels_x))
-    width     = 0.35  
     
     medias_p1 = [r['p1_media'] for r in resultados]
     std_p1    = [math.sqrt(r['p1_var']) for r in resultados]
     medias_p2 = [r['p2_media'] for r in resultados]
     std_p2    = [math.sqrt(r['p2_var']) for r in resultados]
-    
-    ax_bar.bar([p - width/2 for p in x_pos], medias_p1, width, yerr=std_p1, label=PATRON_1, capsize=5, color='royalblue', alpha=0.8, edgecolor='black')
-    ax_bar.bar([p + width/2 for p in x_pos], medias_p2, width, yerr=std_p2, label=PATRON_2, capsize=5, color='crimson', alpha=0.8, edgecolor='black')
-    
-    ax_bar.set_ylabel('Calidad de Imitación (Qi)')
-    ax_bar.set_title('Robustez del Algoritmo ante Ruido - Resultados en Vivo', fontweight='bold')
-    ax_bar.set_xticks(list(x_pos))
-    ax_bar.set_xticklabels(labels_x)
-    ax_bar.set_xlabel(f"Variable Modificada: {var_name}")
-    ax_bar.set_ylim(-0.05, 1.05)
-    ax_bar.legend(loc='upper right')
-    ax_bar.grid(axis='y', linestyle='--', alpha=0.7)
 
-    # 2. ACTUALIZAR TABLA DE DATOS (PANEL INFERIOR)
-    ax_table.clear()
-    ax_table.axis('off')
-    ax_table.axis('tight')
-    
-    cols = ['Exp', f'{var_name}', 'EMP (cm)', 'RMSE (cm)', f'Qi {PATRON_1[:4]}', f'Qi {PATRON_2[:4]}']
-    table_data = []
-    
-    for r in resultados:
-        table_data.append([
-            r['id'], 
-            f"{r[var_name]:.4f}", 
-            f"{r['emp_media']:.2f}", 
-            f"{r['rmse_media']:.2f}",
-            f"{r['p1_media']:.4f}", 
-            f"{r['p2_media']:.4f}"
-        ])
+    # 1. GRÁFICA DE BARRAS
+    if ax_bar is not None:
+        ax_bar.clear()
+        width = 0.35  
+        ax_bar.bar([p - width/2 for p in x_pos], medias_p1, width, yerr=std_p1, label=PATRON_1, capsize=5, color='royalblue', alpha=0.8, edgecolor='black')
+        ax_bar.bar([p + width/2 for p in x_pos], medias_p2, width, yerr=std_p2, label=PATRON_2, capsize=5, color='crimson', alpha=0.8, edgecolor='black')
+        ax_bar.set_ylabel('Calidad de Imitación (Qi)')
+        ax_bar.set_title('Robustez ante Ruido (Barras)', fontweight='bold')
+        ax_bar.set_xticks(list(x_pos))
+        ax_bar.set_xticklabels(labels_x, rotation=15 if len(labels_x[0]) > 8 else 0)
+        ax_bar.set_xlabel(f"Variables: {var_keys_str}")
+        ax_bar.set_ylim(-0.05, 1.05)
+        ax_bar.legend(loc='upper right')
+        ax_bar.grid(axis='y', linestyle='--', alpha=0.7)
+
+    # 2. GRÁFICA DE LÍNEAS
+    if ax_line is not None:
+        ax_line.clear()
+        ax_line.errorbar(x_pos, medias_p1, yerr=std_p1, label=PATRON_1, fmt='-o', color='royalblue', capsize=5, lw=2)
+        ax_line.errorbar(x_pos, medias_p2, yerr=std_p2, label=PATRON_2, fmt='-s', color='crimson', capsize=5, lw=2)
+        ax_line.set_ylabel('Calidad de Imitación (Qi)')
+        ax_line.set_title('Robustez ante Ruido (Líneas)', fontweight='bold')
+        ax_line.set_xticks(list(x_pos))
+        ax_line.set_xticklabels(labels_x, rotation=15 if len(labels_x[0]) > 8 else 0)
+        ax_line.set_xlabel(f"Variables: {var_keys_str}")
+        ax_line.set_ylim(-0.05, 1.05)
+        ax_line.legend(loc='upper right')
+        ax_line.grid(True, linestyle='--', alpha=0.7)
+
+    # 3. TABLA DE DATOS
+    if ax_table is not None:
+        ax_table.clear()
+        ax_table.axis('off')
+        ax_table.axis('tight')
         
-    if table_data:
-        tabla = ax_table.table(cellText=table_data, colLabels=cols, loc='center', cellLoc='center')
-        tabla.auto_set_font_size(False)
-        tabla.set_fontsize(10)
-        tabla.scale(1.0, 1.5)
+        # Formatear el header para que encaje bien
+        header_var = var_keys_str.replace(" / ", "\n") 
+        cols = ['Exp', header_var, 'EMP (cm)', 'RMSE (cm)', f'Qi {PATRON_1[:4]}', f'Qi {PATRON_2[:4]}']
+        table_data = []
+        
+        for r in resultados:
+            table_data.append([
+                r['id'], 
+                r['val_str'].replace(" / ", "\n"), 
+                f"{r['emp_media']:.2f}", 
+                f"{r['rmse_media']:.2f}",
+                f"{r['p1_media']:.4f}", 
+                f"{r['p2_media']:.4f}"
+            ])
+            
+        if table_data:
+            tabla = ax_table.table(cellText=table_data, colLabels=cols, loc='center', cellLoc='center')
+            tabla.auto_set_font_size(False)
+            tabla.set_fontsize(10)
+            tabla.scale(1.0, 2.0)
+            ax_table.set_title('Resumen Tabular de Resultados', fontweight='bold', pad=20)
 
-    # Forzar el redibujado de la ventana sin congelar el código principal (modo interactivo)
-    fig.canvas.draw_idle()
-    plt.pause(0.05)
 
 # =============================================================================
 # ---------- BUCLE PRINCIPAL ----------
 # =============================================================================
 def main():
-    # Inicialización de la ventana (Figura con 2 filas: 1 Gráfica superior, 2 Tabla inferior)
-    if MOSTRAR_EN_VIVO:
+    # Inicialización condicional de ventanas en vivo
+    fig_bar, ax_bar = None, None
+    fig_line, ax_line = None, None
+    fig_table, ax_table = None, None
+    
+    hay_ventanas_vivas = MOSTRAR_BARRAS or MOSTRAR_LINEAS or MOSTRAR_TABLA
+
+    if hay_ventanas_vivas:
         plt.ion()
-        fig, (ax_bar, ax_table) = plt.subplots(2, 1, figsize=(10, 8), gridspec_kw={'height_ratios': [2.5, 1]})
-        fig.canvas.manager.set_window_title('Evaluador de Ruido - Tiempo Real')
-        plt.show(block=False)
+        if MOSTRAR_BARRAS:
+            fig_bar, ax_bar = plt.subplots(figsize=(8, 6))
+            fig_bar.canvas.manager.set_window_title('Evaluador Ruido - Barras')
+            fig_bar.show()
+        if MOSTRAR_LINEAS:
+            fig_line, ax_line = plt.subplots(figsize=(8, 6))
+            fig_line.canvas.manager.set_window_title('Evaluador Ruido - Líneas')
+            fig_line.show()
+        if MOSTRAR_TABLA:
+            fig_table, ax_table = plt.subplots(figsize=(10, 4))
+            fig_table.canvas.manager.set_window_title('Evaluador Ruido - Tabla')
+            fig_table.show()
 
     resultados_totales = []
     cfg_actual = None
+    var_keys_global = "Variable"
     
     # Acumuladores 
     cfg_qi_p1, cfg_qi_p2 = [], []
@@ -136,10 +187,11 @@ def main():
     sim_max_qi_p1, sim_max_qi_p2 = None, None
     sim_err_lineal, sim_err_cuad = [], []
     last_orig_ang, last_orig_dist = None, None
+    line_counter = 0
 
     # Lectura entubada por stdin (Recibiendo datos desde multi_run_sim.py)
     for linea_bruta in sys.stdin:
-        # ¡Punto Clave! Quitamos los colores ANSI para que la Regex funcione bien
+        line_counter += 1
         linea = ANSI_ESCAPE.sub('', linea_bruta.strip())
         
         # 1. CONTROL DE ORQUESTADOR
@@ -147,8 +199,13 @@ def main():
             
             # Guardamos y graficamos la configuración que acaba de terminar
             if cfg_actual and len(cfg_emp) > 0:
+                keys_str, vals_str = parse_variables(cfg_actual['params'])
+                var_keys_global = keys_str
+                
                 res = {
                     'id': cfg_actual['id'],
+                    'params_dict': cfg_actual['params'],
+                    'val_str': vals_str,
                     'emp_media': statistics.mean(cfg_emp),
                     'mse_media': statistics.mean(cfg_mse),
                     'rmse_media': statistics.mean(cfg_rmse),
@@ -157,13 +214,14 @@ def main():
                     'p2_media': statistics.mean(cfg_qi_p2) if cfg_qi_p2 else 0.0,
                     'p2_var': statistics.variance(cfg_qi_p2) if len(cfg_qi_p2) > 1 else 0.0
                 }
-                res.update(cfg_actual['params'])
                 resultados_totales.append(res)
                 
-                var_name = list(cfg_actual['params'].keys())[0]
-                
-                if MOSTRAR_EN_VIVO:
-                    actualizar_interfaz_vivo(fig, ax_bar, ax_table, resultados_totales, var_name)
+                if hay_ventanas_vivas:
+                    dibujar_graficas(resultados_totales, var_keys_global, ax_bar, ax_line, ax_table)
+                    if fig_bar: fig_bar.canvas.draw_idle()
+                    if fig_line: fig_line.canvas.draw_idle()
+                    if fig_table: fig_table.canvas.draw_idle()
+                    plt.pause(0.05)
 
             if linea.startswith("[MULTI_END_ALL]"):
                 break
@@ -188,9 +246,6 @@ def main():
             cfg_emp.append(s_emp)
             cfg_mse.append(s_mse)
             cfg_rmse.append(math.sqrt(s_mse))
-            
-            if MOSTRAR_EN_VIVO:
-                plt.pause(0.001) 
 
         # 2. EXTRACCIÓN DE MÉTRICAS VIA REGEX
         else:
@@ -224,35 +279,67 @@ def main():
                 elif patron == PATRON_2:
                     sim_max_qi_p2 = max(sim_max_qi_p2 or 0, qi_val)
 
+        # Flush ligero para evitar el lag a nivel de SO
+        if hay_ventanas_vivas and line_counter % 1000 == 0:
+            if fig_bar: fig_bar.canvas.flush_events()
+            if fig_line: fig_line.canvas.flush_events()
+            if fig_table: fig_table.canvas.flush_events()
+
+
     # =========================================================================
     # ---------- GUARDADO FINAL (CSV Y GRÁFICAS) ----------
     # =========================================================================
-    if resultados_totales and GUARDAR_RESULTADOS:
+    if resultados_totales and (GUARDAR_BARRAS or GUARDAR_LINEAS or GUARDAR_TABLA or GUARDAR_CSV):
         print("\n" + "="*70)
         print("[Evaluador Ruido] Finalizando y exportando reportes...")
         os.makedirs(CARPETA_RESULTADOS, exist_ok=True)
-        var_name = list(resultados_totales[0].keys())[-1] 
         
-        # 1. Guardar CSV
-        with open(CSV_OUTPUT, mode='w', newline='') as f:
-            writer = csv.writer(f)
-            headers = ['Config_ID', var_name, 'EMP_Promedio', 'MSE_Prom', 'RMSE_Prom',
-                       f'Media_{PATRON_1}', f'Var_{PATRON_1}', f'Media_{PATRON_2}', f'Var_{PATRON_2}']
-            writer.writerow(headers)
-            
-            for r in resultados_totales:
-                fila = [r['id'], r[var_name], r['emp_media'], r['mse_media'], r['rmse_media'],
-                        r['p1_media'], r['p1_var'], r['p2_media'], r['p2_var']]
-                writer.writerow(fila)
-        print(f"[Evaluador Ruido] CSV guardado en: {CSV_OUTPUT}")
-        
-        # 2. Guardar Imagen Completa (Gráfica + Tabla)
-        if MOSTRAR_EN_VIVO:
-            plt.figure(fig.number) 
-            plt.savefig(GRAFICA_OUTPUT, dpi=200, bbox_inches='tight')
-            print(f"[Evaluador Ruido] Imagen combinada guardada en: {GRAFICA_OUTPUT}")
-            
-            # Mantener la ventana abierta para que el usuario pueda observarla antes de cerrar
+        # --- 1. GUARDAR CSV ---
+        if GUARDAR_CSV:
+            csv_path = f"{CARPETA_RESULTADOS}/analisis_ruido.csv"
+            with open(csv_path, mode='w', newline='') as f:
+                writer = csv.writer(f)
+                vars_keys = list(resultados_totales[0]['params_dict'].keys())
+                
+                headers = ['Config_ID'] + vars_keys + ['EMP_Promedio', 'MSE_Prom', 'RMSE_Prom',
+                           f'Media_{PATRON_1}', f'Var_{PATRON_1}', f'Media_{PATRON_2}', f'Var_{PATRON_2}']
+                writer.writerow(headers)
+                
+                for r in resultados_totales:
+                    fila = [r['id']] + [r['params_dict'][k] for k in vars_keys] + [
+                            r['emp_media'], r['mse_media'], r['rmse_media'],
+                            r['p1_media'], r['p1_var'], r['p2_media'], r['p2_var']]
+                    writer.writerow(fila)
+            print(f"[Evaluador Ruido] CSV guardado en: {csv_path}")
+
+        # --- 2. GUARDAR GRÁFICAS ---
+        # Si elegiste guardar algo que NO estabas mostrando en vivo, lo creamos de fondo
+        if GUARDAR_BARRAS:
+            if not fig_bar:
+                fig_bar, ax_bar = plt.subplots(figsize=(8, 6))
+                dibujar_graficas(resultados_totales, var_keys_global, ax_bar=ax_bar)
+            path = f"{CARPETA_RESULTADOS}/grafica_barras.png"
+            fig_bar.savefig(path, dpi=200, bbox_inches='tight')
+            print(f"[Evaluador Ruido] Barras guardadas en: {path}")
+
+        if GUARDAR_LINEAS:
+            if not fig_line:
+                fig_line, ax_line = plt.subplots(figsize=(8, 6))
+                dibujar_graficas(resultados_totales, var_keys_global, ax_line=ax_line)
+            path = f"{CARPETA_RESULTADOS}/grafica_lineas.png"
+            fig_line.savefig(path, dpi=200, bbox_inches='tight')
+            print(f"[Evaluador Ruido] Líneas guardadas en: {path}")
+
+        if GUARDAR_TABLA:
+            if not fig_table:
+                fig_table, ax_table = plt.subplots(figsize=(10, 4))
+                dibujar_graficas(resultados_totales, var_keys_global, ax_table=ax_table)
+            path = f"{CARPETA_RESULTADOS}/tabla_datos.png"
+            fig_table.savefig(path, dpi=200, bbox_inches='tight')
+            print(f"[Evaluador Ruido] Tabla guardada en: {path}")
+
+        # Mantener las ventanas abiertas si estabas en modo en vivo
+        if hay_ventanas_vivas:
             plt.ioff()
             plt.show()
 

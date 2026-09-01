@@ -91,9 +91,13 @@ def main():
     sim_avance = []
     
     nombre_var_eje_x = "Variable"
+    
+    # Contador para mantener la UI viva sin lag
+    line_counter = 0
 
     for linea in sys.stdin:
         linea = linea.strip()
+        line_counter += 1
         
         # 1. PROTOCOLO ORQUESTADOR
         if linea.startswith("[MULTI_CONFIG]"):
@@ -107,7 +111,7 @@ def main():
                 y_a_mean.append(np.mean(cfg_avance))
                 y_a_std.append(np.std(cfg_avance))
 
-                # ACTUALIZAR GRÁFICAS EN VIVO
+                # ACTUALIZAR GRÁFICAS EN VIVO SOLO AL CAMBIAR CONFIGURACIÓN
                 actualizar_grafica_en_vivo(ax_otsu, fig_otsu, f'Promedio Otsu vs {nombre_var_eje_x}', nombre_var_eje_x, x_vals, y_o_mean, y_o_std, 'blue', '-o')
                 actualizar_grafica_en_vivo(ax_avance, fig_avance, f'Mejor Avance vs {nombre_var_eje_x}', nombre_var_eje_x, x_vals, y_a_mean, y_a_std, 'green', '-s')
 
@@ -153,8 +157,10 @@ def main():
                         except ValueError:
                             pass
                             
-        # Permitir que la UI no se congele si hay muchos datos de consola
-        plt.pause(0.001)
+        # Permitir que la UI no se congele a nivel de OS (Costo computacional casi 0, comparado con plt.pause)
+        if line_counter % 1000 == 0:
+            fig_otsu.canvas.flush_events()
+            fig_avance.canvas.flush_events()
 
     # =========================================================================
     # ---------- GUARDADO Y CIERRE FINAL ----------

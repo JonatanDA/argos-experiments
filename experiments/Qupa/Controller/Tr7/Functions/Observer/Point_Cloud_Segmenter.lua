@@ -9,7 +9,7 @@ local math_helper = require("Functions.math_helper")
 local DS_avance   = 1
 local Ds_max_av   = 30
 local DS_FIRST    = true
-local dato1       = 0
+local mejor_separacion_seleccionada       = 0
 
 -- =============================================================================
 -- FUNCIONES AUXILIARES (Locales)
@@ -109,7 +109,7 @@ local function detect_seg(master_id, xx, yy, ttypes, cfg)
         })
 
         if separacion > max_separacion_global then max_separacion_global = separacion end
-        if av == 30 then dato1 = separacion end
+        if av == 30 then mejor_separacion_seleccionada = separacion end
     end
 
     local umbral_aceptacion = max_separacion_global * cfg.factor_de_suficiencia
@@ -139,10 +139,9 @@ local function detect_seg(master_id, xx, yy, ttypes, cfg)
         log("\n>>> FASE 3: SEGMENTACIÓN CON HISTÉRESIS (LOOK-AHEAD)")
     end
 
-    if DS_FIRST then 
-        if Print_tracker_varianza then Print_tracker_varianza(dato1, mejor_avance) end
-        DS_FIRST = false
-    end
+    -- Exportar los datos ganadores al evaluador externo de Python
+    if evaluator_otsu then evaluator_otsu(mejor_separacion_seleccionada, mejor_avance) end
+ 
 
     local segmentos, segmentos_type = {}, {} 
     local k = 1       
@@ -170,6 +169,7 @@ local function detect_seg(master_id, xx, yy, ttypes, cfg)
         end
         
         if Print_tracker_varianza then Print_tracker_varianza(master_id, std_dev) end
+
         packet_counter = packet_counter + 1
 
         if estado_actual == ESTADO_MOVIMIENTO then

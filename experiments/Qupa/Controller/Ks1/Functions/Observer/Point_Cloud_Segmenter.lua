@@ -191,9 +191,7 @@ local function detect_seg(master_id, xx, yy, ttypes, cfg)
     end
 
     -- Exportar los datos ganadores al evaluador externo de Python
-    if evaluator_otsu then 
-        evaluator_otsu(mejor_separacion_seleccionada, mejor_avance) 
-    end
+    if evaluator_otsu then evaluator_otsu(mejor_separacion_seleccionada, mejor_avance) end
 
     local segmentos, segmentos_type = {}, {} 
     local k = 1       
