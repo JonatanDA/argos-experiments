@@ -7,13 +7,9 @@ controllers compatibles: Tr6, Tr7, Ks1
 Evaluador pasivo en 2D (Ruido vs Velocidad).
 - Escucha la salida de multi_run_sim.py.
 - Procesa combinaciones de velocidad (ej. speed_dem) y ruido (ej. NOISE_LEVEL_DIST).
-- Dibuja simultáneamente una Gráfica de Líneas y un Mapa de Calor (Heatmap) de la Calidad (Qi).
+- Actualiza las gráficas al concluir cada ciclo completo del experimento (N/N).
 - Ajusta el formato automáticamente si recibe una variable de ruido o un par.
-
-DEPENDENCIAS LUA REQUERIDAS:
-- Print_tracker_calidad_imitacion_data
-TRACKERS REQUERIDOS EN RUN_SIM:
-- tracker_calidad_imitacion.py
+- Permite omitir configuraciones sin datos rellenando con NaN y visualizando de forma punteada.
 """
 
 import sys
@@ -29,16 +25,14 @@ import matplotlib.pyplot as plt
 # =============================================================================
 # ---------- 1. VARIABLES DE CONTROL ----------
 # =============================================================================
-# Opciones de Renderizado (Se pueden activar ambas, dividirá la pantalla)
 MOSTRAR_LINEAS_VIVO      = True
 MOSTRAR_HEATMAP_VIVO     = True
 
 GUARDAR_RESULTADOS       = True  
 CARPETA_RESULTADOS       = "Resultados/Robots/Qupa/Tr6/Evaluator_Speed_Noise"
 
-# Patrón base contra el cual contrastará la Calidad (Qi) 
 PATRON_OBJETIVO          = "triangulo"
-PATRON_2         = "Pentágono_irregular"
+PATRON_2                 = "Pentágono_irregular"
 
 CSV_OUTPUT       = f"{CARPETA_RESULTADOS}/analisis_2d_qi.csv"
 GRAFICA_OUTPUT   = f"{CARPETA_RESULTADOS}/grafica_2d_qi.png"
@@ -53,14 +47,6 @@ REGEX_QI       = re.compile(r"\*.*imita mejor a '([^']+)' con Qi = ([-+]?[0-9]*\
 # ---------- 3. LOGICA DE PROCESAMIENTO DE PARÁMETROS ----------
 # =============================================================================
 def parse_parameters(params):
-    """
-    Identifica cuál es la variable de velocidad y cuál(es) la de ruido.
-    Devuelve:
-    - speed_val: Valor numérico de la velocidad
-    - primary_noise_val: Valor numérico para usar en el eje X de la gráfica de líneas
-    - primary_noise_key: Nombre de la variable principal de ruido
-    - paired_noise_str: String formateado (ej. "0.010 / 0.050") ideal para el Heatmap
-    """
     speed_val = 0.0
     noises = {}
     
@@ -70,11 +56,9 @@ def parse_parameters(params):
         else:
             noises[k] = v
             
-    # Determinamos la variable primaria (Para el eje X continuo de la gráfica de líneas)
     primary_noise_val = list(noises.values())[0] if noises else 0.0
     primary_noise_key = list(noises.keys())[0] if noises else "N/A"
     
-    # Creamos el string emparejado para el Heatmap
     if len(noises) > 1:
         vals = list(noises.values())
         paired_noise_str = f"{vals[0]:.3f}\n{vals[1]:.3f}"
@@ -89,46 +73,66 @@ def parse_parameters(params):
 # ---------- 4. INTERFAZ GRÁFICA EN VIVO ----------
 # =============================================================================
 def actualizar_graficas(fig, ax_lines, ax_heat, resultados, noise_key):
-    """ Redibuja el gráfico de líneas y el heatmap basándose en los datos acumulados """
-    
-    # Extraer las velocidades y ruidos únicos registrados hasta el momento
     speeds = sorted(list(set(r['speed'] for r in resultados)))
     noises_num = sorted(list(set(r['noise_num'] for r in resultados)))
     noises_str = sorted(list(set(r['noise_str'] for r in resultados)), key=lambda x: float(x.split('\n')[0]))
     
-    # 1. GRÁFICA DE LÍNEAS MÚLTIPLES
     if ax_lines:
         ax_lines.clear()
         
-        # Color map para diferenciar fácilmente las líneas
+        # Limpieza segura para el eje twin de varianza sin duplicar
+        for ax in fig.axes:
+            if ax != ax_lines and ax != ax_heat:
+                ax.remove()
+                
+        ax_var = ax_lines.twinx()
         cmap = plt.get_cmap('tab10')
+        max_var = 0.01
         
         for idx, s in enumerate(speeds):
             data_s = [r for r in resultados if r['speed'] == s]
             data_s.sort(key=lambda x: x['noise_num'])
             
-            x_vals = [r['noise_num'] for r in data_s]
-            y_vals = [r['qi_mean'] for r in data_s]
-            y_errs = [math.sqrt(r['qi_var']) for r in data_s]
+            x_vals = np.array([r['noise_num'] for r in data_s], dtype=float)
+            y_vals = np.array([r['qi_mean'] for r in data_s], dtype=float)
+            var_vals = np.array([r['qi_var'] for r in data_s], dtype=float)
             
-            ax_lines.errorbar(x_vals, y_vals, yerr=y_errs, marker='o', 
-                              label=f'Speed: {s:.1f}', capsize=4, 
-                              color=cmap(idx % 10), lw=2)
-                              
+            valid_vars = var_vals[~np.isnan(var_vals)]
+            if len(valid_vars) > 0:
+                max_var = max(max_var, np.nanmax(valid_vars))
+                
+            y_errs = np.array([math.sqrt(v) if not np.isnan(v) else 0.0 for v in var_vals])
+            color = cmap(idx % 10)
+            
+            # 1. Dibujamos línea punteada que une los datos saltándose los NaN
+            valid_mask = ~np.isnan(y_vals)
+            if np.sum(valid_mask) > 1:
+                ax_lines.plot(x_vals[valid_mask], y_vals[valid_mask], linestyle=':', color=color, alpha=0.7)
+            
+            # 2. Dibujamos los puntos y líneas reales (Se romperán naturalmente si hay un NaN)
+            ax_lines.errorbar(x_vals, y_vals, yerr=y_errs, fmt='o-', label=f'Speed: {s:.1f}', capsize=4, color=color, lw=2)
+            
+            # 3. Dibujamos la varianza en el segundo eje (Derecha)
+            if len(valid_vars) > 0:
+                ax_var.plot(x_vals, var_vals, linestyle='--', marker='x', alpha=0.4, color=color)
+
         ax_lines.set_title('Robustez ante Ruido según Velocidad', fontweight='bold')
         ax_lines.set_xlabel(f'Ruido Base ({noise_key})')
         ax_lines.set_ylabel(f'Calidad (Qi - {PATRON_OBJETIVO})')
         ax_lines.set_ylim(-0.05, 1.05)
-        ax_lines.grid(True, linestyle='--', alpha=0.7)
+        ax_lines.grid(True, linestyle='-', alpha=0.3)
         if speeds:
-            ax_lines.legend()
+            ax_lines.legend(loc='upper left')
+            
+        ax_var.set_ylabel('Varianza (Qi)', color='gray')
+        ax_var.set_ylim(0, max_var * 1.2) 
+        ax_var.tick_params(axis='y', labelcolor='gray')
 
-    # 2. MAPA DE CALOR (HEATMAP)
     if ax_heat:
         ax_heat.clear()
         if len(speeds) > 0 and len(noises_num) > 0:
             Z = np.zeros((len(speeds), len(noises_num)))
-            Z[:] = np.nan # Llenar con NaN lo que aún no se ha explorado
+            Z[:] = np.nan 
             
             for r in resultados:
                 s_idx = speeds.index(r['speed'])
@@ -145,15 +149,14 @@ def actualizar_graficas(fig, ax_lines, ax_heat, resultados, noise_key):
             ax_heat.set_xlabel('Pares de Ruido (Dist / Ángulo)' if '\n' in noises_str[0] else f'Ruido ({noise_key})')
             ax_heat.set_ylabel('Velocidad (speed_dem)')
             
-            # Anotaciones numéricas dentro de las celdas
             for i in range(len(speeds)):
                 for j in range(len(noises_num)):
                     if not np.isnan(Z[i, j]):
-                        # Texto negro en colores claros (medio), blanco en extremos oscuros
                         text_color = "black" if 0.3 < Z[i, j] < 0.8 else "white"
                         ax_heat.text(j, i, f"{Z[i, j]:.2f}", ha="center", va="center", color=text_color, fontweight='bold')
+                    else:
+                        ax_heat.text(j, i, "-", ha="center", va="center", color="gray", fontweight='bold')
 
-    # Flush UI
     fig.canvas.draw_idle()
     plt.pause(0.05)
 
@@ -167,12 +170,9 @@ def main():
         fig, axes = plt.subplots(1, cols, figsize=(7 * cols, 6))
         fig.canvas.manager.set_window_title('Evaluador 2D - Ruido vs Velocidad')
         
-        if cols == 2:
-            ax_lines, ax_heat = axes[0], axes[1]
-        elif MOSTRAR_LINEAS_VIVO:
-            ax_lines, ax_heat = axes, None
-        else:
-            ax_lines, ax_heat = None, axes
+        if cols == 2: ax_lines, ax_heat = axes[0], axes[1]
+        elif MOSTRAR_LINEAS_VIVO: ax_lines, ax_heat = axes, None
+        else: ax_lines, ax_heat = None, axes
             
         plt.tight_layout(pad=3.0)
         plt.show(block=False)
@@ -180,7 +180,6 @@ def main():
     resultados_totales = []
     cfg_actual = None
     
-    # Acumuladores de simulación
     cfg_qi = []
     sim_max_qi = None
     noise_key_global = "Ruido"
@@ -190,33 +189,13 @@ def main():
         line_counter += 1
         linea = ANSI_ESCAPE.sub('', linea_bruta.strip())
         
-        # 1. CONTROL DE ORQUESTADOR
-        if linea.startswith("[MULTI_CONFIG]") or linea.startswith("[MULTI_END_ALL]"):
-            
-            if cfg_actual and len(cfg_qi) > 0:
-                speed_v, noise_num, noise_key, noise_str = parse_parameters(cfg_actual['params'])
-                noise_key_global = noise_key
-                
-                res = {
-                    'id': cfg_actual['id'],
-                    'speed': speed_v,
-                    'noise_num': noise_num,
-                    'noise_str': noise_str,
-                    'qi_mean': statistics.mean(cfg_qi),
-                    'qi_var': statistics.variance(cfg_qi) if len(cfg_qi) > 1 else 0.0
-                }
-                res.update(cfg_actual['params'])
-                resultados_totales.append(res)
-                
-                if MOSTRAR_LINEAS_VIVO or MOSTRAR_HEATMAP_VIVO:
-                    actualizar_graficas(fig, ax_lines, ax_heat, resultados_totales, noise_key_global)
-
-            if linea.startswith("[MULTI_END_ALL]"):
-                break
-                
+        if linea.startswith("[MULTI_CONFIG]"):
             data_str = linea.replace("[MULTI_CONFIG]", "").strip()
             cfg_actual = json.loads(data_str)
             cfg_qi = []
+            
+        elif linea.startswith("[MULTI_END_ALL]"):
+            break
             
         elif linea.startswith("[SIM_START]"):
             sim_max_qi = None
@@ -224,8 +203,36 @@ def main():
         elif linea.startswith("[SIM_END]"):
             if sim_max_qi is not None:
                 cfg_qi.append(sim_max_qi)
+            
+            # Formato esperado: [SIM_END] 3/3
+            match = re.search(r'\[SIM_END\]\s+(\d+)/(\d+)', linea)
+            if match:
+                j = int(match.group(1))
+                n = int(match.group(2))
+                
+                # Renderiza al terminar todas las simulaciones de la configuración actual
+                if j == n and cfg_actual:
+                    speed_v, noise_num, noise_key, noise_str = parse_parameters(cfg_actual['params'])
+                    noise_key_global = noise_key
+                    
+                    # Si no hay datos, guarda np.nan (se creará la casilla en blanco y puntuado en gráfica)
+                    qi_mean = statistics.mean(cfg_qi) if len(cfg_qi) > 0 else np.nan
+                    qi_var = statistics.variance(cfg_qi) if len(cfg_qi) > 1 else (0.0 if len(cfg_qi) == 1 else np.nan)
+                    
+                    res = {
+                        'id': cfg_actual['id'],
+                        'speed': speed_v,
+                        'noise_num': noise_num,
+                        'noise_str': noise_str,
+                        'qi_mean': qi_mean,
+                        'qi_var': qi_var
+                    }
+                    res.update(cfg_actual['params'])
+                    resultados_totales.append(res)
+                    
+                    if MOSTRAR_LINEAS_VIVO or MOSTRAR_HEATMAP_VIVO:
+                        actualizar_graficas(fig, ax_lines, ax_heat, resultados_totales, noise_key_global)
 
-        # 2. EXTRACCIÓN DE MÉTRICA (Qi)
         else:
             match_qi = REGEX_QI.search(linea)
             if match_qi:
@@ -234,24 +241,18 @@ def main():
                 if patron == PATRON_OBJETIVO:
                     sim_max_qi = max(sim_max_qi or 0, qi_val)
 
-        # Mantiene la UI viva a nivel SO sin lag artificial
         if (MOSTRAR_LINEAS_VIVO or MOSTRAR_HEATMAP_VIVO) and line_counter % 1000 == 0:
             fig.canvas.flush_events()
 
-    # =========================================================================
-    # ---------- GUARDADO FINAL (CSV Y GRÁFICAS) ----------
-    # =========================================================================
     if resultados_totales and GUARDAR_RESULTADOS:
         print("\n" + "="*70)
         print("[Evaluador 2D] Finalizando y exportando reportes...")
         os.makedirs(CARPETA_RESULTADOS, exist_ok=True)
         
-        # 1. Guardar CSV
         with open(CSV_OUTPUT, mode='w', newline='') as f:
             writer = csv.writer(f)
-            
-            # Obtener nombres dinámicos de las variables originales
             vars_keys = [k for k in resultados_totales[0].keys() if k not in ['id', 'speed', 'noise_num', 'noise_str', 'qi_mean', 'qi_var']]
+            # Se verá la Variación (Qi_Var) añadida en la tabla CSV
             headers = ['Config_ID'] + vars_keys + [f'Qi_Mean_{PATRON_OBJETIVO}', f'Qi_Var_{PATRON_OBJETIVO}']
             writer.writerow(headers)
             
@@ -260,12 +261,10 @@ def main():
                 writer.writerow(fila)
         print(f"[Evaluador 2D] CSV guardado en: {CSV_OUTPUT}")
         
-        # 2. Guardar Imagen Completa
         if MOSTRAR_LINEAS_VIVO or MOSTRAR_HEATMAP_VIVO:
             plt.figure(fig.number) 
             plt.savefig(GRAFICA_OUTPUT, dpi=200, bbox_inches='tight')
             print(f"[Evaluador 2D] Gráfica combinada guardada en: {GRAFICA_OUTPUT}")
-            
             plt.ioff()
             plt.show()
 

@@ -3,7 +3,8 @@
 """
 run_sim.py (Modular y Auto-Configurable)
 - Prepara temp_run_<PID>.argos y temp_run_<PID>.lua dinámicos (evita colisiones).
-- Auto-descomenta funciones y variables Lua basándose en los trackers activos.
+- Auto-descomenta funciones y variables Lua basándose en los evaluadores pasados y trackers activos.
+- Inyecta el valor de las variables solicitadas por multi_run directamente en la copia de lua.
 - Lanza argos3 y múltiples scripts de seguimiento (trackers).
 - Clona la salida de ARGoS y la envía a cada script evitando colisiones en terminal.
 - Detiene ARGoS automáticamente al detectar el END_SIMULATION_PATTERN.
@@ -18,21 +19,41 @@ import threading
 import time
 import argparse
 import re
+import json
 
 # =============================================================================
-# ---------- 1. DICCIONARIO DE TRACKERS Y DEPENDENCIAS LUA ----------
+# ---------- 1. DICCIONARIO DE EVALUADORES Y DEPENDENCIAS ----------
 # =============================================================================
-# Este diccionario documenta los trackers y evaluadores disponibles, qué hacen y 
-# qué funciones/variables LUA requieren estar en el script .lua para funcionar.
-#
-# Funciones Lua de Referencia (Para insertar en tus .lua si no están):
-#
-# function Print_tracker_trayectory_data(k, x, y, logging) ... end
-# function Print_tracker_calidad_imitacion_data(linea_resumen, is_master) ... end
-# function Print_tracker_varianza(k, var) ... end
-# function evaluator_otsu(separacion, avance) ... end
-# function evaluator_ruido(raw_angle, raw_dist, noisy_angle, noisy_dist) ... end
+EVALUATOR_DEPENDENCIES = {
+    "scripts/evaluator_ruido&Qi.py": {
+        "lua_functions": [
+            "evaluator_ruido",
+            "Print_tracker_calidad_imitacion_data"
+        ],
+        "lua_variables": [],
+        "run_sim_trackers": [
+            "scripts/tracker_calidad_imitacion.py"
+        ]
+    },
+    "scripts/evaluator_otsu.py": {
+        "lua_functions": [
+            "evaluator_otsu"
+        ],
+        "lua_variables": [],
+        "run_sim_trackers": []
+    },
+    "scripts/evaluator_qi_speed_noise.py": {
+        "lua_functions": [],
+        "lua_variables": [],
+        "run_sim_trackers": [
+            "scripts/tracker_calidad_imitacion.py"
+        ]
+    }
+}
 
+# =============================================================================
+# ---------- 2. DICCIONARIO DE TRACKERS Y DEPENDENCIAS LUA ----------
+# =============================================================================
 TRACKER_DEPENDENCIES = {
     "tracker_trayectory.py": {
         "descripcion": "Rastrea y grafica la trayectoria 2D (x,y) global del master y/o aprendiz.",
@@ -58,56 +79,25 @@ TRACKER_DEPENDENCIES = {
         "descripcion": "Evalúa el comportamiento al inyectar ruido estadístico (ángulo y distancia).",
         "funciones_lua": ["evaluator_ruido"],
         "variables_lua": []
-    }
+    },
+    "evaluator_qi_speed_noise.py": {
+        "descripcion": "Evalúa el comportamiento al inyectar ruido estadístico (ángulo y distancia).",
+        "funciones_lua": [],
+        "variables_lua": []
+    },
 }
+
 
 # =============================================================================
 # ---------- CONFIGURACIÓN DE RUTAS Y ARCHIVOS DE SIMULACIÓN ----------
 # =============================================================================
-# Preconfiguraciones guardadas (descomentar según el experimento):
-# DEFAULT_ARGOS_FILE              = "experiments/Footbot/Argos/Winfield.argos"   
-# DEFAULT_LUA_SCRIPT              = "experiments/Footbot/Controller/J_exp1.lua" 
-
-# DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/St.argos"   
-# DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/St10.lua" 
-
 DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Tr.argos"   
-DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Tr6.lua" 
-
-# DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Tr.argos"   
-# DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Tr7/Tr7.lua" 
-
-# DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Ks.argos"   
-# DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Ks1/Ks1.lua" 
+DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Tr7/Tr7.lua" 
 
 # =============================================================================
-# ---------- CONFIGURACIÓN DE TRACKERS ACTIVOS ----------
+# ---------- CONFIGURACIÓN DE TRACKERS MANUALES ACTIVOS ----------
 # =============================================================================
 TRACKERS = [    
-    # {
-    #     "script": "scripts/tracker_trayectory.py",
-    #     "args": []
-    # },
-    # {
-    #     "script": "scripts/tracker_calidad_imitacion.py",
-    #     "args": []
-    # },
-    # {
-    #     "script": "scripts/tracker_varianza.py",
-    #     "args": []
-    # },
-    # {
-    #     "script": "scripts/tracker_imitation_chain.py",
-    #     "args": []
-    # },
-    # {
-    #     "script": "scripts/tracker_imitated_pattern.py",
-    #     "args": []
-    # },
-    # {
-    #     "script": "scripts/tracker_clusters.py",
-    #     "args": []
-    # }
 ]
 
 # =============================================================================
@@ -126,11 +116,6 @@ USE_STDBUF_BUFFERING            = True
 ARGOS_BASE_COMMAND              = ["argos3", "-c"] # Se añadirá el archivo dinámico luego
 
 # =============================================================================
-# ---------- CONFIGURACIÓN DE SISTEMA Y LOCALIZACIÓN ----------
-# =============================================================================
-FORCE_DOT_DECIMALS              = False             
-
-# =============================================================================
 # ---------- CONFIGURACIÓN DE HISTORIAL Y ARCHIVOS DE SALIDA ----------
 # =============================================================================
 SAVE_OUTPUT_MODE                = "None"            
@@ -144,38 +129,21 @@ END_SIMULATION_PATTERN          = "End_simulation"
 AUTO_STOP_ON_END_PATTERN        = True              
 MAX_IDLE_TIMEOUT_SEC            = 120               
 
-
 # =============================================================================
 # ---------- CONFIGURACIÓN DE VERBOSIDAD ----------
 # =============================================================================
-# 0: Silencioso total (solo info inicial y conteo de exps). Todo pasa oculto. Ideal para pruebas masivas.
-# 1: Recomendado (Muestra eventos vitales: inicios, cierres, guardados de evaluadores).
-# 2: Detallado (Modo 1 + Prints específicos etiquetados de los Trackers, sin mezclar salidas ruidosas).
-# 3: Todo (Modo 2 + Datos puros de ARGoS como variables continuas, timers, alertas internas, etc).
-NIVEL_LOG = 0
+NIVEL_LOG = 1
 
-# =============================================================================
-# Diccionario global para rastrear la última vez que un tracker dio señales de vida
 tracker_activity = {}
 print_lock = threading.Lock()
 
 def print_log(mensaje, nivel_minimo=1, actual_nivel_log=1, end="\n"):
-    """Impresor condicional que respeta el NIVEL_LOG establecido."""
     if actual_nivel_log >= nivel_minimo:
         with print_lock:
             sys.stdout.write(mensaje + end)
             sys.stdout.flush()
 
-def auto_uncomment_lua(filepath, dest_path, func_names, var_names):
-    """
-    Lee el archivo Lua original y genera una copia temporal donde las 
-    funciones y variables requeridas por los trackers han sido descomentadas.
-    """
-    if not func_names and not var_names:
-        import shutil
-        shutil.copy(filepath, dest_path)
-        return
-
+def auto_uncomment_lua_and_inject_vars(filepath, dest_path, func_names, var_names, vars_dict):
     with open(filepath, 'r', encoding='utf-8') as f:
         lines = f.readlines()
 
@@ -187,7 +155,6 @@ def auto_uncomment_lua(filepath, dest_path, func_names, var_names):
         is_var_line = False
         if not in_target_func:
             for vname in var_names:
-                # Busca "-- nombre_variable =" y lo descomenta
                 if re.match(rf"^[ \t]*--\s*{vname}\s*=", line):
                     uncommented = re.sub(r"^([ \t]*)--\s?", r"\1", line)
                     out_lines.append(uncommented)
@@ -220,8 +187,14 @@ def auto_uncomment_lua(filepath, dest_path, func_names, var_names):
         else:
             out_lines.append(line)
 
+    # Inyección de variables sobre el contenido final
+    content = "".join(out_lines)
+    for var_name, var_val in vars_dict.items():
+        patron = r'(?P<antes>\b' + re.escape(var_name) + r'\s*=\s*)[-+]?[0-9]*\.?[0-9]+'
+        content = re.sub(patron, rf'\g<antes>{var_val:.4f}', content)
+
     with open(dest_path, 'w', encoding='utf-8') as f:
-        f.writelines(out_lines)
+        f.write(content)
 
 def build_argos_command(temp_argos_file):
     base = ARGOS_BASE_COMMAND.copy() + [temp_argos_file]
@@ -258,14 +231,13 @@ def broadcast_output(argos_stdout, tracker_procesos, argos_proc, out_file, mode,
                 sys.stdout.flush()
         
         if out_file and mode:
-            # Optimización: Direct string matching instead of loop comprehesion
             is_log = "[INFO]" in line or "[WARNING]" in line or "[ERR]" in line or "[FATAL]" in line
             if mode == "ALL" or (mode == "LOG" and is_log) or (mode == "PRINT" and not is_log):
                 out_file.write(line)
             out_file.flush() 
         
         for p in tracker_procesos:
-            if p.poll() is None:  # Eliminado el p.stdin extra (es rápido)
+            if p.poll() is None: 
                 try:
                     p.stdin.write(line)
                     p.stdin.flush()
@@ -291,43 +263,72 @@ def translate_return_code(code):
     return f"Desconocido"
 
 def main():
+    global ENABLE_VISUALIZATION
+    
     parser = argparse.ArgumentParser(description="Orquestador de ARGoS (run_sim.py)")
     parser.add_argument("--argos", type=str, help="Ruta al archivo .argos", default=None)
     parser.add_argument("--lua", type=str, help="Ruta al script .lua", default=None)
     parser.add_argument("--nivel_log", type=int, help="Sobrescribe NIVEL_LOG internamente", default=None)
+    parser.add_argument("--vars", type=str, help="JSON con variables a inyectar", default="{}")
+    parser.add_argument("--evaluators", type=str, help="Lista JSON de evaluadores a usar", default="[]")
+    parser.add_argument("--visualize", type=str, help="True o False, de multi_run", default=None)
     args, _ = parser.parse_known_args()
 
     actual_argos_file = args.argos if args.argos else DEFAULT_ARGOS_FILE
     actual_lua_script = args.lua if args.lua else DEFAULT_LUA_SCRIPT
     actual_nivel_log = args.nivel_log if args.nivel_log is not None else NIVEL_LOG
 
+    try: evaluators_list = json.loads(args.evaluators)
+    except: evaluators_list = []
+    
+    try: vars_dict = json.loads(args.vars)
+    except: vars_dict = {}
+
+    if args.visualize is not None:
+        ENABLE_VISUALIZATION = (args.visualize.lower() == "true")
+
     cwd = os.getcwd()
     print_log(f"[Gestor] Directorio de trabajo: {cwd}", 1, actual_nivel_log)
 
-    # Nombres únicos por proceso (evita choques en ejecuciones paralelas)
     pid = os.getpid()
     temp_argos_file = f"temp_run_{pid}.argos"
     
     dir_lua_original = os.path.dirname(actual_lua_script)
-    if not dir_lua_original:
-        dir_lua_original = "."
+    if not dir_lua_original: dir_lua_original = "."
     nombre_base_lua = os.path.basename(actual_lua_script)
     temp_lua_file = os.path.join(dir_lua_original, f"temp_{pid}_{nombre_base_lua}")
 
     # --- AUTO-DESCOMENTADO DE DEPENDENCIAS LUA ---
     req_lua_funcs = []
     req_lua_vars = []
+    
+    # Evaluar dependencias de Evaluadores inyectados
+    for ev_script in evaluators_list:
+        if ev_script in EVALUATOR_DEPENDENCIES:
+            req_lua_funcs.extend(EVALUATOR_DEPENDENCIES[ev_script].get("lua_functions", []))
+            req_lua_vars.extend(EVALUATOR_DEPENDENCIES[ev_script].get("lua_variables", []))
+            
+            # Inyectar trackers dinámicos en la lista de TRACKERS
+            req_trackers = EVALUATOR_DEPENDENCIES[ev_script].get("run_sim_trackers", [])
+            for rt in req_trackers:
+                if not any(t["script"] == rt for t in TRACKERS):
+                    TRACKERS.append({"script": rt, "args": []})
+
+    # Evaluar dependencias de todos los Trackers (manuales + inyectados)
     for t_conf in TRACKERS:
         script_key = os.path.basename(t_conf["script"])
         if script_key in TRACKER_DEPENDENCIES:
             req_lua_funcs.extend(TRACKER_DEPENDENCIES[script_key].get("funciones_lua", []))
             req_lua_vars.extend(TRACKER_DEPENDENCIES[script_key].get("variables_lua", []))
 
-    if req_lua_funcs or req_lua_vars:
-        print_log(f"[Gestor] Auto-configurando dependencias Lua en archivo temporal...", 1, actual_nivel_log)
+    req_lua_funcs = list(set(req_lua_funcs))
+    req_lua_vars = list(set(req_lua_vars))
+
+    if req_lua_funcs or req_lua_vars or vars_dict:
+        print_log(f"[Gestor] Auto-configurando e inyectando dependencias Lua en copia temporal...", 1, actual_nivel_log)
     
     try:
-        auto_uncomment_lua(actual_lua_script, temp_lua_file, req_lua_funcs, req_lua_vars)
+        auto_uncomment_lua_and_inject_vars(actual_lua_script, temp_lua_file, req_lua_funcs, req_lua_vars, vars_dict)
     except FileNotFoundError:
         print_log(f"[Gestor] ERROR: No se encontró {actual_lua_script}", 0, actual_nivel_log)
         return
@@ -346,7 +347,7 @@ def main():
     for controller in root.findall('controllers/lua_controller'):
         params = controller.find('params')
         if params is not None:
-            print_log(f"[Gestor] Cambiando controlador XML a temporal: {temp_lua_file}", 1, actual_nivel_log)
+            print_log(f"[Gestor] Cambiando controlador XML a copia temporal: {temp_lua_file}", 1, actual_nivel_log)
             params.set('script', temp_lua_file)
             found_lua = True
             
@@ -373,7 +374,6 @@ def main():
         output_file_handle = open(full_output_path, "w", encoding="utf-8")
 
     run_env = os.environ.copy()
-    if FORCE_DOT_DECIMALS: run_env["LC_ALL"] = "C"
     if ENABLE_VISUALIZATION and USE_XVFB_VIRTUAL_DISPLAY: run_env["DISPLAY"] = ":99" 
 
     argos_cmd = build_argos_command(temp_argos_file)
