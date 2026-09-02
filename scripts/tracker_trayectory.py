@@ -18,68 +18,73 @@ CARACTERÍSTICAS PRINCIPALES:
 # =============================================================================
 # ---------- CONFIGURACIÓN DE VISUALIZACIÓN E INTERFAZ ----------
 # =============================================================================
+
 # --- Ventana Principal y Gráficas ---
-TITULO_GRAFICA                  = "Datos observados por el Robot Aprendiz (Ra)"
-MOSTRAR_TIEMPO_TITULO           = True              # True: Agregar tiempo/ticks transcurridos al título
-UNIDAD_TIEMPO_TITULO            = "segundos"        # "segundos" o "ticks"
-MODO                            = 1                 # 1: Toda la trayectoria, 2: Ventana de muestras (estela)    
-WINDOW                          = 300               
-DEFAULT_XMIN                    = -1.5              
-DEFAULT_XMAX                    =  1.5
-DEFAULT_YMIN                    = -1.5
-DEFAULT_YMAX                    =  1.5
-DEAD_TIME_LIMIT                 = 1                 
-DELETE_ON_TIMEOUT               = False              
+TITULO_GRAFICA          = "Datos observados por el Robot Aprendiz (Ra)" # Título de la gráfica
+MOSTRAR_TIEMPO_TITULO   = True                                          # Muestra el tiempo en el título: True/False
+UNIDAD_TIEMPO_TITULO    = "segundos"                                    # Unidad del tiempo: "segundos" o "ticks"
+
+MODO                = 1         # Modo de visualización: 1 = trayectoria completa, 2 = ventana de tiempo
+WINDOW              = 300       # Cantidad de ticks mostrados en modo 2
+
+DEFAULT_XMIN        = -1.5      # Límite mínimo del eje X
+DEFAULT_XMAX        = 1.5       # Límite máximo del eje X
+DEFAULT_YMIN        = -1.5      # Límite mínimo del eje Y
+DEFAULT_YMAX        = 1.5       # Límite máximo del eje Y
+
+DEAD_TIME_LIMIT     = 1         # Tiempo de inactividad permitido en segundos de simulación
+DELETE_ON_TIMEOUT   = False     # Elimina la trayectoria tras inactividad: True/False
 
 # --- CONTROL DE VELOCIDADES Y TIEMPO (FPS) ---
-SIM_TICKS_PER_SEC               = 10                # Ticks de ARGoS por segundo de simulación
-LIVE_FPS                        = 10                # FPS en vivo (Gráfica de Matplotlib)
-VIDEO_FRAMES                    = 2                 # Cuadros a extraer por segundo de simulación
-SYNC_VIDEO_DURATION             = False             # True: Duración real. False: Cámara rápida/lenta
+SIM_TICKS_PER_SEC   = 10        # Ticks de simulación por segundo
+LIVE_FPS            = 10        # Frecuencia de actualización de la gráfica en vivo
+VIDEO_FRAMES        = 2         # Cuadros por segundo usados para generar el video
+SYNC_VIDEO_DURATION = False     # Sincroniza la duración del video: True/False
 
 # --- Etiquetas y Nombres ---
-MODO_ETIQUETAS                  = 1                 
-PREFIX_ETIQUETAS                = "Rm"              
-NOMBRE_OBSERVADOR               = "Ra"              
-MAX_ETIQUETAS_FIJAS             = 7                 
-ELIMINAR_SUPERPUESTAS           = False             
-MAX_HISTORICAS_TRANSPARENTES    = 3                 
+MODO_ETIQUETAS                  = 1     # Etiquetas: 0 = leyenda, 3 = fijas iniciales, otro = posición actual
+PREFIX_ETIQUETAS                = "Rm"  # Prefijo para normalizar nombres de robots
+NOMBRE_OBSERVADOR               = "Ra"  # Nombre mostrado para el robot observador
+MAX_ETIQUETAS_FIJAS             = 7     # Máximo número de etiquetas fijas; None = sin límite
+ELIMINAR_SUPERPUESTAS           = False # Evita etiquetas superpuestas: True/False
+MAX_HISTORICAS_TRANSPARENTES    = 3     # Cantidad máxima de posiciones históricas etiquetadas
 
 # Listas y reglas de nombres configurables
-PALABRAS_IGNORADAS              = ["maestro"]           # Lista de palabras clave para descartar líneas
-PREFIJOS_NORMALIZABLES          = ["master"]            # Prefijos que se traducen a PREFIX_ETIQUETAS (ej. obj1 -> Rm1)
-PRESERVAR_NOMBRES_LIBRES        = True                  # True: Nombres libres sin número o no listados pasan tal cual
+PALABRAS_IGNORADAS      = ["maestro"]   # Palabras al inicio del nombre que hacen que se ignore el robot
+PREFIJOS_NORMALIZABLES  = ["master"]    # Prefijos cuyos nombres con números serán normalizados
+PRESERVAR_NOMBRES_LIBRES= True          # Conserva nombres sin número: True/False
 
-# --- Representación del Observador (Cámara) ---
-MODO_VISUAL_OBSERVADOR          = 1                 
-MODO_CIRCULO                    = 2                 
-ANGULO_APERTURA                 = 72.800            
-ALTURA_CAMARA                   = 0.3               
+# --- Representación del Observador (Cámara) 
+MODO_VISUAL_OBSERVADOR  = 1         # Observador: 0 = oculto, 1 = punto actual, 2 = trayectoria
+MODO_CIRCULO            = 0         # Círculo de visión: 0 = oculto, 1 = circulo visible , 2 = relleno semitransparente
+ANGULO_APERTURA         = 72.800    # Ángulo de apertura usado para calcular el radio de visión
+ALTURA_CAMARA           = 0.3       # Altura usada para calcular el radio de visión
 
 # =============================================================================
 # ---------- CONFIGURACIÓN DE GUARDADO DE DATOS ----------
 # =============================================================================
 # --- Rutas de Directorios ---
-VIDEO_DIR                       = "Resultados/Robots/Qupa/Tr6/Trajectory.1"
-CSV_DIR                         = "Resultados/Robots/Qupa/Ks1/Trajectory/Data"
+VIDEO_DIR       = "Resultados/Robots/Qupa/Tr7/Pentagono/Trajectory"       # Carpeta donde se guarda el video
+CSV_DIR         = "Resultados/Robots/Qupa/Tr7/Pentagono/Trajectory/Data"  # Carpeta donde se guardan los CSV
 
 # --- Video ---
-SAVE_VIDEO                      = False              # True: Guardar video de la trayectoria                      
-DEFAULT_OUTFILE                 = "Tr6.1.mp4"                 
+SAVE_VIDEO      = False                                            # Guarda el video: True/False
+DEFAULT_OUTFILE = "Tr7.mp4"                                     # Nombre del archivo de video de salida
 
 # --- CSV ---
-SAVE_CSV                        = False              # True: Para tener un backup siempre.
+SAVE_CSV        = False                                            # Guarda los datos en CSV: True/False
 
 # =============================================================================
 # ---------- CONFIGURACIÓN DEL TRACKER Y SISTEMA ----------
 # =============================================================================
-OBSERVADOR_ID                   = "Apprentice"         
-FILTRO                          = False             # True: Mostrar solo los listados en ROBOTS
-ROBOTS                          = "7,10,11"         # Lista de robots a mostrar (si FILTRO=True)
 
-DEFAULT_END_PATTERN             = "End_simulation"  
-AUTO_CLOSE_WINDOWS              = False             
-AUTO_CLOSE_TIME                 = None              
+OBSERVADOR_ID       = "Apprentice"      # Identificador interno del robot observador
+FILTRO              = False             # Filtra los robots mostrados: True/False
+ROBOTS              = "7,10,11"         # Robots incluidos cuando FILTRO=True
+
+DEFAULT_END_PATTERN = "End_simulation"  # Texto que indica el final de la simulación
+AUTO_CLOSE_WINDOWS  = False             # Cierra automáticamente la gráfica al terminar: True/False
+AUTO_CLOSE_TIME     = None              # Tiempo real de inactividad para detener el programa; None = desactivado          
 
 import os
 import sys

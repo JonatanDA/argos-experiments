@@ -42,7 +42,7 @@ GUARDAR_TABLA            = True
 GUARDAR_CSV              = True
 
 # ¿Dónde quieres guardar los archivos resultantes del experimento de ruido?
-CARPETA_RESULTADOS       = "Resultados/Robots/Qupa/Tr6/Evaluator_Ruido"
+CARPETA_RESULTADOS       = "Resultados/Robots/Qupa/Tr7/Pentagono/Evaluator_Ruido"
 
 # Patrones geométricos base contra los cuales contrastará la Calidad (Qi) 
 PATRON_1         = "triangulo"

@@ -39,8 +39,8 @@ PLOT_SUPERPUESTAS       = False                             # (Aplica para SHOW_
 # =============================================================================
 # ---------- CONFIGURACIÓN DE GUARDADO DE DATOS ----------
 # =============================================================================
-SAVE_IMAGES             = False                             # True: Guarda capturas de las gráficas de comparación automáticamente
-IMAGE_DIR               = "Resultados/Robots/Qupa/Ks1/Calidad_Imitacion"    # (Aplica si SAVE_IMAGES=True) Directorio de guardado
+SAVE_IMAGES             = False                              # True: Guarda capturas de las gráficas de comparación automáticamente
+IMAGE_DIR               = "Resultados/Robots/Qupa/Tr7/Pentagono/Calidad_Imitacion"    # (Aplica si SAVE_IMAGES=True) Directorio de guardado
 
 # =============================================================================
 # ---------- CONFIGURACIÓN DEL TRACKER Y SISTEMA ----------

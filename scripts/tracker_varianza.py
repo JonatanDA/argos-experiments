@@ -28,8 +28,8 @@ GRAFICAR_TRAYECTORIA_COMO_LINEA = False             # True: Grafica trayectoria 
 # =============================================================================
 # ---------- CONFIGURACIÓN DE GUARDADO DE DATOS ----------
 # =============================================================================
-GUARDAR_IMAGEN          = 0                 # 0: No guardar, 1: Guardar solo Varianza, 2: Guardar Varianza + Trayectoria
-DIRECTORIO_GUARDADO     = "Resultados/Robots/Qupa/Ks1/Varianza" # Directorio donde se almacenarán las capturas
+GUARDAR_IMAGEN          = 2                 # 0: No guardar, 1: Guardar solo Varianza, 2: Guardar Varianza + Trayectoria
+DIRECTORIO_GUARDADO     = "Resultados/Robots/Qupa/Tr7/Pentagono/Varianza" # Directorio donde se almacenarán las capturas
 NOMBRE_BASE             = "Qa"              # Prefijo de la imagen guardada. (Ej: 'ma' genera 'ma1.png', 'ma2.png')
 
 # =============================================================================

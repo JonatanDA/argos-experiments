@@ -20,6 +20,8 @@ import threading
 # ---------- 1. CONFIGURACIÓN DEL EXPERIMENTO (VARIABLES A BARRER) ----------
 # =============================================================================
 
+NUM_EXP_M        = 5   # Repeticiones por cada configuración (Simulaciones idénticas)
+
 # Definición de grupos de variables.
 # Formato de cada grupo: ( {variables}, NUM_PASOS_N, MODO_EVALUACION )
 # MODO: 1 -> Simultáneo (Avanza las variables al mismo tiempo)
@@ -31,35 +33,33 @@ VARIABLES_A_EVALUAR = [
             "NOISE_LEVEL_ANGLE" : (0.0, 0.25),
         }, 
         5, # NUMERO DE PASOS
-        1  # MODO A EVALUAR
+        1   # MODO A EVALUAR
     ),
-    # (
-    #     { # Grupo 2
-    #         "speed_dem": (5, 30)        
-    #     }, 
-    #     5, # NUMERO DE PASOS
-    #     1  # MODO A EVALUAR
-    # )
+    (
+        { # Grupo 2
+            "speed_dem": (5, 30)        
+        }, 
+        3, # NUMERO DE PASOS
+        1  # MODO A EVALUAR
+    )
 ]
-
-NUM_EXP_M        = 2   # Repeticiones por cada configuración (Simulaciones idénticas)
 
 # =============================================================================
 # ---------- 2. CONFIGURACIÓN DE MULTI EVALUATORS ----------
 # =============================================================================
 MULTI_EVALUATORS = [
-    {
-        "script": "scripts/evaluator_ruido&Qi.py",
-        "args": []
-    },
+    # {
+    #     "script": "scripts/evaluator_ruido&Qi.py",
+    #     "args": []
+    # }
     # {
     #     "script": "scripts/evaluator_otsu.py",
     #     "args": []
     # }
-    # {
-    #     "script": "scripts/evaluator_qi_speed_noise.py",
-    #     "args": []
-    # },
+    {
+        "script": "scripts/evaluator_qi_speed_noise.py",
+        "args": []
+    },
 ]
 
 # =============================================================================
@@ -89,7 +89,7 @@ ENABLE_VISUALIZATION = False # Se enviará a run_sim.py para sobrescribir su val
 # 1: Recomendado (Muestra eventos vitales: inicios, cierres, guardados de evaluadores).
 # 2: Detallado (Modo 1 + Prints específicos etiquetados de los Trackers, sin mezclar salidas ruidosas).
 # 3: Todo (Modo 2 + Datos puros de ARGoS como variables continuas, timers, alertas internas, etc).
-NIVEL_LOG = 0
+NIVEL_LOG = 1
 
 def print_log(mensaje, nivel_minimo=0, end="\n"):
     if NIVEL_LOG >= nivel_minimo:

@@ -120,7 +120,7 @@ bigger = 1  -- Factor de escala para ajustar el tamaño de las figuras predefini
 if robot.id == "Qupa4" then
 
 elseif robot.id == "Qupa1" or robot.id == "Qupa2" or robot.id == "Qupa3" or robot.id == "Qupa5" then
-    figura = "Pentágono_irregular" -- "triangulo_regular" -- "octagono" -- "triangulo_irregular_1" --"Pentágono_irregular"  -- "Heptágono"-- "" -- "trayectoria_1" 
+    figura = "triangulo_regular" -- "triangulo_regular" -- "octagono" -- "triangulo_irregular_1" --"Pentágono_irregular"  -- "Heptágono"-- "" -- "trayectoria_1" 
     bigger = 1
 else
     figura = "triangulo_regular" -- "triangulo_regular" -- "octagono" -- "triangulo_irregular_1" --"Pentágono_irregular"  -- "Heptágono"-- "" -- "trayectoria_1" 
@@ -141,101 +141,110 @@ _LOG_MODE = 1
 -------------------------------------------------------------------------------------------------------------------------------------
 
 -------------------------------------------------------------------------------------------------------------------------------------
--- Funciones para los trackers
+-- Funciones para los trackers 
+    -- Estas funciones se mantienen comentadas por defecto. Si se requieren se llaman en arun_sim.py y este las descomenta para que se ejecuten automaticamente.
 -------------------------------------------------------------------------------------------------------------------------------------
 
-displayed_data  = 3 --1 Datos obtenidos por el observador. 2. Datos globales del movimiento del demostrador, 3: Ambos
-function Print_tracker_trayectory_data(k, x, y)
+-- displayed_data  = 3 --1 Datos obtenidos por el apprentice. 2. Datos globales del movimiento del master, 3: Ambos
+-- function Print_tracker_trayectory_data(k, x, y,logging)
 
 --     if type(k) == "number" then
 
 --         if displayed_data == 1 or displayed_data == 3 then
---             print("Qupa" .. k .. " & " .. x .. " , " .. y)
+--             print("Master" .. k .. " & " .. x .. " , " .. y)
+--             if logging then 
+--                 log("Master" .. k .. " & " .. x .. " , " .. y)
+--             end
+
 --         end
 
 --     elseif type(k) == "string" then
-
 --         -- Obtener el vector de posición inicial
 --         local x = robot.positioning.position.x
 --         local y = robot.positioning.position.y
 
 --         if displayed_data == 2 or displayed_data == 3 then
---             if robot.id == "Qupa4" then
-    
---                 print("Qupa400 & " .. x .. " , " .. y)  -- Imprime los datos globales del movimiento del Observador
---             else     
---                 --print(robot.id .. " & " .. x .. " , " .. y)  
+--             if k == "Qupa4" then
+--                 print("Apprentice & " .. x .. " , " .. y)  -- Imprime los datos globales del movimiento del Observador
+--             elseif k == "App" then
+--                 print("Ra".. " & " .. x .. " , " .. y)  
 --             end
 --         end
 --     end
-end
+-- end
 
-function Print_tracker_calidad_imitacion_data(linea_resumen, is_master)
+-- function Print_tracker_calidad_imitacion_data(linea_resumen, is_master)
 
-    -- if is_master == 0 then
+--     if is_master == 0 then
 
-    --     print(linea_resumen)
-    -- else
+--         print(linea_resumen)
+--     else
 
-    --     -- Función auxiliar para separar la parte entera y los dos decimales de un número
-    --     local function split_num(val)
-    --         local sign = val < 0 and "-" or ""
-    --         local abs_val = math.abs(val)
-    --         local int_part = math.floor(abs_val)
-    --         local dec_part = math.floor((abs_val - int_part) * 100 + 0.5)
+--         -- Función auxiliar para separar la parte entera y los dos decimales de un número
+--         local function split_num(val)
+--             local sign = val < 0 and "-" or ""
+--             local abs_val = math.abs(val)
+--             local int_part = math.floor(abs_val)
+--             local dec_part = math.floor((abs_val - int_part) * 100 + 0.5)
             
-    --         -- Ajuste por si el redondeo sube el decimal a 100
-    --         if dec_part >= 100 then
-    --             int_part = int_part + 1
-    --             dec_part = dec_part - 100
-    --         end
+--             -- Ajuste por si el redondeo sube el decimal a 100
+--             if dec_part >= 100 then
+--                 int_part = int_part + 1
+--                 dec_part = dec_part - 100
+--             end
             
-    --         -- Retorna dos valores: la parte entera (con su signo) y la parte decimal a 2 dígitos
-    --         return string.format("%s%d", sign, int_part), string.format("%02d", dec_part)
-    --     end
+--             -- Retorna dos valores: la parte entera (con su signo) y la parte decimal a 2 dígitos
+--             return string.format("%s%d", sign, int_part), string.format("%02d", dec_part)
+--         end
         
-    --     -- Obtenemos el patrón correspondiente a la variable global 'figura' actual
-    --     local data = original_params()
+--         -- Obtenemos el patrón correspondiente a la variable global 'figura' actual
+--         local data = original_params()
         
-    --     -- Verificamos que se haya encontrado un patrón válido
-    --     if not data or not data.params then 
-    --         log(robot.id .. " & Error: No se encontró un patrón asignado.")
-    --         return 
-    --     end
+--         -- Verificamos que se haya encontrado un patrón válido
+--         if not data or not data.params then 
+--             log(robot.id .. " & Error: No se encontró un patrón asignado.")
+--             return 
+--         end
         
-    --     local nombre_patron = data.name or "Desconocido"
-    --     -- Iniciamos la cadena con el formato solicitado
-    --     local resultado = robot.id .. " & Original&" .. nombre_patron
+--         local nombre_patron = data.name or "Desconocido"
+--         -- Iniciamos la cadena con el formato solicitado
+--         local resultado = robot.id .. " & Original&" .. nombre_patron
         
-    --     local params = data.params
-    --     for j = 1, #params do
-    --         local dist = params[j][1]
-    --         local ang = params[j][2]
+--         local params = data.params
+--         for j = 1, #params do
+--             local dist = params[j][1]
+--             local ang = params[j][2]
             
-    --         -- Separamos enteros y decimales de la distancia y el ángulo
-    --         local dist_i, dist_d = split_num(dist)
-    --         local ang_i, ang_d = split_num(ang)
+--             -- Separamos enteros y decimales de la distancia y el ángulo
+--             local dist_i, dist_d = split_num(dist)
+--             local ang_i, ang_d = split_num(ang)
             
-    --         -- Concatenamos el paso con el formato (distI,distD,angI,angD)
-    --         resultado = resultado .. string.format("(%s,%s,%s,%s)", dist_i, dist_d, ang_i, ang_d)
+--             -- Concatenamos el paso con el formato (distI,distD,angI,angD)
+--             resultado = resultado .. string.format("(%s,%s,%s,%s)", dist_i, dist_d, ang_i, ang_d)
             
-    --         -- Agregamos la coma separadora entre pasos (excepto en el último)
-    --         if j < #params then
-    --             resultado = resultado .. ","
-    --         end
-    --     end
-    --     -- Imprimimos el resultado final en la terminal de ARGoS
-    --     log(resultado)
-    -- end
-end
+--             -- Agregamos la coma separadora entre pasos (excepto en el último)
+--             if j < #params then
+--                 resultado = resultado .. ","
+--             end
+--         end
+--         -- Imprimimos el resultado final en la terminal de ARGoS
+--         log(resultado)
+--     end
+-- end
 
-function Print_tracker_varianza(k, var)
-    --print( "Maestro"..k.." & " .. var)             -- Datos para el anális de varianza en los datos obtenidos por el observador. Script -> sun_sim.py
-end
+-- function Print_tracker_varianza(k, var)
+--     print( "Maestro"..k.." & " .. var)             -- Datos para el anális de varianza en los datos obtenidos por el observador. Script -> sun_sim.py
+-- end
 
-function Print_M_Otsu_evaluator(separacion, avance)
-    print( "Otsu & " .. separacion.." , "..avance) -- Datos para el anális del método de otsu a distintos valores de velocidad del demostrador: speed_dem  -> Script: master_evluator.py
-end
+-- function evaluator_otsu(separacion, avance)
+--     print( "Otsu & " .. separacion.." , "..avance) -- Datos para el anális del método de otsu a distintos valores de velocidad del demostrador: speed_dem  -> Script: master_evluator.py
+-- end
+
+-- function evaluator_ruido (raw_angle, raw_dist, noisy_angle, noisy_dist)
+--     log("timer = "..timer)
+--     log("Blob detectado: angulo = " .. raw_angle .. ", distancia = " .. raw_dist)
+--     log("Blob ruidoso detectado: angulo = " .. noisy_angle .. ", distancia = " .. noisy_dist)
+-- end
 
 -------------------------------------------------------------------------------------------------------------------------------------
 -- Función que se ejecuta al inicio de la simulación
@@ -245,7 +254,7 @@ function init()
     
     robot.colored_blob_omnidirectional_camera.enable()
     determinar_rol()
-    Print_tracker_calidad_imitacion_data(robot.id, is_master)
+    if Print_tracker_calidad_imitacion_data then Print_tracker_calidad_imitacion_data(robot.id, is_master) end
 end
 
 -------------------------------------------------------------------------------------------------------------------------------------
@@ -255,26 +264,16 @@ end
 timer = 1
 function step()
 
+    if robot.id == "Qupa4" and Print_tracker_trayectory_data then print("Timer="..timer) end
     if is_master == 1 then
         demostrador() -- Ejecutar si es demostrador
     else
         observador()
     end
 
-    if timer == max_time then
+    if robot.id == "Qupa4" and timer == max_time then
         print("End_simulation")
     end
-
-    -- if robot.id == "Qupa6" then
-
-    --     --move(30, 0, 1, 10, false, robot.id)
-    -- else
-    --     setleds("black")
-    --     -- log("\n")
-    --     -- local prox = proximidad()
-    --     -- log("prox[1]: "..prox[1]..", prox[2]: "..prox[2]..", "..robot.id)
-    --     --robot.wheels.set_velocity(0, 5)
-    -- end
 
     timer = timer + 1
 end
@@ -486,8 +485,9 @@ function patron_imitado(params_P)
                 move(valor1, valor2, speed_dem, 10, false, robot.id)
                 -- log("\nDistancia a recorrer en el segmento "..indice.." = ".. params[indice][1]..", Distancia actual: "..move_distance..", "..robot.id)
                 -- log("Angulo del segmento = "..indice.." = ".. params[indice][2]..", Angulo actual: "..move_angle*180/math.pi ..", "..robot.id)
-                Print_tracker_trayectory_data(robot.id,0,0)
-
+                if robot.id == "Qupa4" then 
+                    if Print_tracker_trayectory_data then Print_tracker_trayectory_data("App", 0, 0) end
+                end
                 figures()
 
                 if c1 == 2 then
@@ -804,6 +804,7 @@ srt_anterior_data = {}
 
 function store_relative_positions()
 
+    if Print_tracker_trayectory_data then Print_tracker_trayectory_data("Qupa4", 0, 0) end
     -- Control de paciencia y reconstrucción global dinámica
     check_patience_and_reconstruct()
 
@@ -827,11 +828,13 @@ function store_relative_positions()
         for i, blob in ipairs(blobs) do
             local raw_angle = blob.angle * (180 / math.pi)
             local raw_dist = blob.distance
+            
+            -- Aplicamos el ruido desde el módulo externo
             local noisy_dist, noisy_angle = aplicar_ruido(raw_dist, raw_angle) 
+            
             local r, g, b = blob.color.red, blob.color.green, blob.color.blue
-            log("timer = "..timer)
-            log("Blob detectado: angulo = " .. raw_angle .. ", distancia = " .. raw_dist)
-            log("Blob ruidoso detectado: angulo = " .. noisy_angle .. ", distancia = " .. noisy_dist)
+            
+            if evaluator_ruido then evaluator_ruido (raw_angle, raw_dist, noisy_angle, noisy_dist) end
 
             if r > 200 and g > 200 and b < 100 then 
                 table.insert(yellow_blobs, {angle = noisy_angle, distance = noisy_dist, type = 2})
@@ -882,7 +885,8 @@ function store_relative_positions()
                                 
                                 local x,y = polarACartesianoPAR(srt_anterior_data[k].distance /100, srt_anterior_data[k].angle * math.pi / 180)
                                 
-                                Print_tracker_trayectory_data(k, x, y)
+                                if Print_tracker_trayectory_data then Print_tracker_trayectory_data(k, x, y, false) end
+
                                 --log("Maestro "..k.." actualizado: angulo = " .. new_data.angle .. ", distancia = " .. new_data.distance .. ", tipo = " .. new_data.type)
 
                                 -- Limpiamos el error porque sí se encontró
@@ -989,323 +993,6 @@ function store_relative_positions()
         end
     end 
 end
-
--- master_tracking = {}
-
--- -- 1. INICIALIZACIÓN
--- function initialize_master_tracking(k, angle_deg, distance, ty)
---     local angle_rad = angle_deg * (math.pi / 180)
---     local x, y = polarACartesianoPAR(distance, angle_rad) 
-
---     master_tracking[k] = {
---         -- Datos crudos (Almacén de toda la historia)
---         raw_x = {x},
---         raw_y = {y},
---         raw_type = {ty},
-
---         -- Variables de referencia
---         x_ant_r = 0,
---         y_ant_r = 0,
---         srt_ang_mark_ant = 0,
---         x_mark = 0, 
---         y_mark = 0, 
-        
---         -- Banderas de estado
---         Pattern_start_detected = (ty == 1), -- Si el primer dato es tipo 1, ya vimos el inicio
---         End_of_pattern_detected = (ty == 3), -- Si el primer dato es tipo 3, ya vimos el final (raro pero posible)
---         processed = false, -- Para asegurar que solo procesamos una vez al final
-        
---         -- Estructuras para el procesador (se llenarán al final)
-
---         segmentos = { movement = {}, type = {}, valid = {} },
---         params = {},
---     }
--- end
-
--- -- 1. FUNCIÓN AUXILIAR DE store_relative_positions: PROCESAMIENTO COMPLETO 
--- function process_full_trajectory(k, track)
---     if _LOG_MODE == 1 then
---         log("\n######################################################## ")
---         log(" PROCESANDO MAESTRO "..k.." (Datos totales: "..#track.raw_x..")")
---         log(" ######################################################## ")
---     end
-
---     -- 1. SEGMENTACIÓN ROBUSTA (Algoritmo Original)
---     -- Obtenemos TODOS los segmentos, incluyendo los de 1 punto (basura útil)
---     local raw_mov, raw_type = detect_seg(k,track.raw_x, track.raw_y, track.raw_type)
-
---     -- 2. FILTRADO Y VALIDACIÓN (Nueva Lógica)
---     -- Aquí aplicamos las reglas A, B y C para eliminar basura y asignar true/false
---     local clean_mov, clean_type, clean_valid = filter_and_validate_segments(raw_mov, raw_type)
-
---     -- Guardamos en la estructura del track los datos LIMPIOS
---     track.segmentos.movement = clean_mov
---     track.segmentos.type = clean_type
---     track.segmentos.valid = clean_valid
-
---     --log(">> Segmentación post-procesada: " .. #raw_mov .. " raw -> " .. #clean_mov .. " limpios.")
-
---     -- 3. DETECCIÓN DE PATRÓN (Inicio/Fin visual)
---     if #track.segmentos.type > 0 then
---         -- Revisar primer segmento limpio
---         local first_seg_types = track.segmentos.type[1]
---         for _, t in ipairs(first_seg_types) do
---             if t == 1 then track.Pattern_start_detected = true break end
---         end
---         -- Revisar último segmento limpio
---         local last_seg_types = track.segmentos.type[#track.segmentos.type]
---         for _, t in ipairs(last_seg_types) do
---             if t == 3 then track.End_of_pattern_detected = true break end
---         end
---     end
-
---     -- 4. CÁLCULOS MATEMÁTICOS
---     if #track.segmentos.movement > 1 then 
-
---         -- a) Obtener Ecuaciones y las columnas sobrevivientes
---         local equations, valid_cols = apply(track.segmentos.movement)
-
---         -- b) Calcular Intersecciones pasando la nueva variable
---         local intersections = calcular_intersecciones_con_extremos(equations, track.segmentos.movement, valid_cols)
-
---         -- c) Calcular Distancias y Ángulos
---         local distancias, angulos = calcular_distancias_y_angulos(intersections)
-
---         -- d) Crear Parámetros (pasando valid_cols)
---         track.params = create_params(distancias, angulos, valid_cols)
-
---         -- e) PRE-PROCESAMIENTO NUMÉRICO Y DATABUFFER
---         if #track.params > 0 then
---             local structure_values = {}
---             local structure_type = nil 
-            
---             for i, param in ipairs(track.params) do
---                 local dist = param[1]
---                 local ang = param[2]
---                 local col_id = param[3] -- ¡Ahora extraemos el ID Real del segmento!
-                
---                 -- Usamos el ID real para consultar si es válido, ya no el índice del bucle 'i'
---                 local is_segment_valid = track.segmentos.valid[col_id]
-
---                 if i > 1 then
---                     table.insert(structure_values, ang)
---                     if structure_type == nil then structure_type = 1 end
---                 end
-
---                 if is_segment_valid then
---                     table.insert(structure_values, dist)
---                     if structure_type == nil then structure_type = 0 end
---                 else
---                     --log(string.format("   [INFO] Segmento %d marcado como INVALIDO (incompleto). Distancia %.2f ignorada.", col_id, dist))
---                 end
---             end
-
---             if #structure_values > 0 and structure_type ~= nil then
---                 local data_packet = { value = structure_values, type = structure_type }
---                 DataBuffer.add(data_packet)
---                 if _LOG_MODE == 1 then
---                     log(">> Datos enviados al DataBuffer. (Total values: "..#structure_values..")")
---                 end
---             end
---         end
---     else
---         if _LOG_MODE == 1 then
---             log("No hay segmentos suficientes para procesar tras la limpieza.")
---         end
---     end
--- end
-
--- -- 2. FUNCIÓN AUXILIAR DE store_relative_positions: FUNCIÓN DE GRABACIÓN 
--- function process_master_segmentation(k, track, x_original, y_original, ty)
---     -- TAREA ÚNICA: ACUMULAR DATOS
---     table.insert(track.raw_x, x_original)
---     table.insert(track.raw_y, y_original)
---     table.insert(track.raw_type, ty)
-
---     --log(string.format("Maestro %d: Nuevo dato agregado - X: %.2f, Y: %.2f, Type: %d", k, x_original, y_original, ty))
-
---     -- Actualizar banderas en tiempo real si aparecen blobs especiales
---     if ty == 1 then track.Pattern_start_detected = true end
---     if ty == 3 then track.End_of_pattern_detected = true end
--- end
-
-
--- -- =========================================================================
--- -- 5. BUCLE PRINCIPAL (Store Relative Positions)
--- -- =========================================================================
--- srt_anterior_data = {}
-
--- function store_relative_positions()
-
---     -- Control de paciencia y reconstrucción global dinámica
---     check_patience_and_reconstruct()
-
---     -- (Lógica de timer y proximidad intacta...)
---     local proximity = proximidad()
---     if proximity[1] < 1 then srt_c5 = 0 else
---         if srt_c5 == 5 * ticks_per_second then resetOBS() return end
---         srt_c5 = srt_c5 + 1
---     end
---     Temporizador_1(20) 
---     if temp == false then robot.leds.set_all_colors("black") end
-    
---     if robot.colored_blob_omnidirectional_camera then                
-        
---         local blobs = robot.colored_blob_omnidirectional_camera
---         local yellow_blobs = {} 
---         local green_blobs = {}  
---         local count = 0   
-
---         -- 1. RECOLECCIÓN Y RUIDO (Intacto)
---         for i, blob in ipairs(blobs) do
---             local raw_angle = blob.angle * (180 / math.pi)
---             local raw_dist = blob.distance
---             local noisy_dist, noisy_angle = aplicar_ruido(raw_dist, raw_angle) -- Tu función de ruido
---             local r, g, b = blob.color.red, blob.color.green, blob.color.blue
---             -- log("Blob detectado: angulo = " .. raw_angle .. ", distancia = " .. raw_dist)
---             -- log("Blob ruidoso detectado: angulo = " .. noisy_angle .. ", distancia = " .. noisy_dist)
-
-
---             if r > 200 and g > 200 and b < 100 then 
---                 table.insert(yellow_blobs, {angle = noisy_angle, distance = noisy_dist, type = 2})
---             elseif r < 100 and g > 200 and b < 100 then 
---                 table.insert(green_blobs, {angle = noisy_angle, distance = noisy_dist})
---             elseif  r > 200 and g < 100 and b < 100  then 
---                 table.insert(yellow_blobs, {angle = noisy_angle, distance = noisy_dist, type = 1})
---             end 
---         end
-
---         local srt_anterior_angle_positive = {}
---         local srt_anterior_angle_negative = {}
---         local updated_anterior_indices = {}
---         local matched_new_indices = {}
-
---         -- Preparar índices anteriores
---         for k, data in pairs(srt_anterior_data) do
---             if data and data.angle then 
---                 if data.angle >= 0 then table.insert(srt_anterior_angle_positive, {angle = data.angle, original_index = k})
---                 else table.insert(srt_anterior_angle_negative, {angle = data.angle, original_index = k}) end
---             end
---         end
-
---         -- 2. ACTUALIZACIÓN DE MAESTROS EXISTENTES (Yellow)
---         for j, new_data in ipairs(yellow_blobs) do
---             local target_list = (new_data.angle >= 0) and srt_anterior_angle_positive or srt_anterior_angle_negative
---             for _, anterior_info in ipairs(target_list) do
---                 local k = anterior_info.original_index
---                 if not updated_anterior_indices[k] then
---                     local anterior_data = srt_anterior_data[k]
---                     if anterior_data.angle then 
---                         local max_ang, min_ang = math.abs(new_data.angle) + angulo_treshold, math.abs(new_data.angle) - angulo_treshold
---                         if math.abs(anterior_data.angle) < max_ang and math.abs(anterior_data.angle) > min_ang then
---                             local max_dist, min_dist = anterior_data.distance + distance_treshold, anterior_data.distance - distance_treshold
---                             if new_data.distance < max_dist and new_data.distance > min_dist then
---                                 -- ACTUALIZAR DATOS
---                                 srt_anterior_data[k].angle = new_data.angle
---                                 srt_anterior_data[k].distance = new_data.distance
---                                 srt_anterior_data[k].type = new_data.type 
-                                
---                                 local x,y = polarACartesianoPAR(srt_anterior_data[k].distance /100, srt_anterior_data[k].angle * math.pi / 180)
-                                
---                                 Print_tracker_trayectory_data(k, x, y)
---                                 log("Maestro "..k.." actualizado: angulo = " .. new_data.angle .. ", distancia = " .. new_data.distance .. ", tipo = " .. new_data.type)
-
---                                 updated_anterior_indices[k] = true
---                                 matched_new_indices[j] = true
---                                 count = count + 1
---                                 break 
---                             end 
---                             log("Maestro "..k.." NO actualizado por estar fuera de rango de la distancia")
---                         end
---                         log("Maestro "..k.." NO actualizado por estar fuera de rango del ángulo")
---                     end 
---                     log("Maestro "..k.." NO actualizado por no tener datos previos")
---                 end 
---                 --log("Maestro "..k.." NO actualizado por ya haber sido actualizado en este tick")
---             end 
---             --log("Blob amarillo "..j.." NO encontrado en maestros existentes, se creará uno nuevo")
---         end 
-
---         -- 3. CREAR NUEVOS MAESTROS
---         for j, new_data in ipairs(yellow_blobs) do
---             if not matched_new_indices[j] then
---                 table.insert(srt_anterior_data, {angle = new_data.angle, distance = new_data.distance, type = new_data.type or 2})
---                 local new_k = #srt_anterior_data
---                 updated_anterior_indices[new_k] = true
---                 initialize_master_tracking(new_k, new_data.angle, new_data.distance, srt_anterior_data[new_k].type)
---             end
---         end
-
---         -- 4. PROCESAR BLOBS VERDES (FINAL DE PATRÓN)
---         for _, green_blob in ipairs(green_blobs) do
---             -- (Lógica de macheo igual que antes)
---             for k, master_data in pairs(srt_anterior_data) do
---                 if master_data.angle and not updated_anterior_indices[k] then -- Solo si no ha sido actualizado por amarillo aun
---                     -- ... (Tu lógica de thresholds para verde aquí, simplificada por brevedad) ...
---                     -- Asumimos match:
---                      local max_ang = math.abs(green_blob.angle) + angulo_treshold
---                      local min_ang = math.abs(green_blob.angle) - angulo_treshold
---                      -- ... chequeos de distancia ...
---                      -- Si match:
---                      srt_anterior_data[k].type = 3 -- Marcar como final
---                      updated_anterior_indices[k] = true 
---                      master_tracking[k].End_of_pattern_detected = true -- Bandera crítica
---                 end
---             end 
---         end 
-
---         -- =========================================================================
---         -- 5. GESTIÓN DE MAESTROS PERDIDOS O FINALIZADOS 
---         -- =========================================================================
---         for k = 1, #srt_anterior_data do
---             local track = master_tracking[k]
-            
---             -- Condición A: Maestro perdido (no actualizado en este tick)
---             -- Condición B: Maestro marcó fin (Blob verde detectado)
---             local is_lost = (srt_anterior_data[k] and srt_anterior_data[k].angle and not updated_anterior_indices[k])
---             local is_finished = track.End_of_pattern_detected
-            
---             if (is_lost or is_finished) and track and not track.processed then
-                
---                 -- EJECUTAR PROCESAMIENTO PESADO
---                 process_full_trajectory(k, track)
-                
---                 track.processed = true -- Evitar reprocesar
-                
---                 -- Limpiar datos del sensor para liberar memoria si es necesario
---                 srt_anterior_data[k].angle = nil
---                 srt_anterior_data[k].distance = nil
---                 srt_anterior_data[k].type = nil
---             end
---         end
-
---         -- =========================================================================
---         -- 6. GRABACIÓN DE DATOS (Para maestros activos)
---         -- =========================================================================
---         for k, _ in pairs(updated_anterior_indices) do
---             local master_data = srt_anterior_data[k]
---             local track = master_tracking[k]
-
---             -- Solo guardamos si el maestro está activo y NO hemos terminado
---             if master_data and track and not track.processed then
-                
---                 local current_distance = master_data.distance
---                 local current_angle_rad = master_data.angle * (math.pi / 180)
---                 local ty = master_data.type
-                
---                 -- Conversión a coordenadas globales relativas al robot
---                 local ang_total = current_angle_rad + track.srt_ang_mark_ant
---                 local x_new, y_new = polarACartesianoPAR(current_distance, ang_total)
---                 local x_original = x_new + track.x_mark
---                 local y_original = y_new + track.y_mark
-
---                 -- LLAMADA NUEVA (Solo guarda)
---                 process_master_segmentation(k, track, x_original, y_original, ty)
---             end
---         end
---     end 
--- end
-
 
 -------------------------------------------------------------------------------------------------------------------------------------
 -- FUNCIONES MATEMÁTICAS Y ESTADÍSTICAS
@@ -1511,9 +1198,9 @@ function detect_seg(s, xx, yy, ttypes)
             max_separacion_global = separacion
         end
 
-        if av == 30 then 
-            dato1 = separacion
-        end
+        -- if av == 30 then 
+        --     dato1 = separacion
+        -- end
     end
 
     -- 2. Seleccionamos el avance más pequeño "suficientemente bueno"
@@ -1521,6 +1208,7 @@ function detect_seg(s, xx, yy, ttypes)
     local umbral_aceptacion = max_separacion_global * factor_de_suficiencia
     local mejor_avance = 5
     local mejor_umbral = 0
+    local mejor_separacion_seleccionada = 0
     local mejores_varianzas = {}
     local mejores_centroides_x = {}
     local mejores_centroides_y = {}
@@ -1529,10 +1217,10 @@ function detect_seg(s, xx, yy, ttypes)
         if res.separacion >= umbral_aceptacion then
             mejor_avance = res.av
             mejor_umbral = res.umbral
+            mejor_separacion_seleccionada = res.separacion
             mejores_varianzas = res.vars
             mejores_centroides_x = res.cx
             mejores_centroides_y = res.cy
-            
             if DS_LOG_MODE== 1 or DS_LOG_MODE== 4 then
                 log(string.format(" -> SELECCIONADO: Avance=%d (%.3f supera el umbral del %d%%: %.3f)", 
                     res.av, res.separacion, factor_de_suficiencia*100, umbral_aceptacion))
@@ -1545,14 +1233,10 @@ function detect_seg(s, xx, yy, ttypes)
         log("\n>>> FASE 2: CONFIGURACIÓN GANADORA")
         log(string.format(" GANADOR -> Avance: %d | Umbral Dinámico: %.3f", mejor_avance, mejor_umbral))
 
-
         log("\n>>> FASE 3: SEGMENTACIÓN CON HISTÉRESIS (LOOK-AHEAD)")
     end
 
-    -- if  DS_FIRST then 
-        Print_M_Otsu_evaluator(dato1, mejor_avance) 
-    --     DS_FIRST = false
-    -- end
+    if evaluator_otsu then evaluator_otsu(mejor_separacion_seleccionada, mejor_avance) end
 
     -- --- FASE 3: SEGMENTACIÓN BASADA EN VALLES ---
     local segmentos = {}      
@@ -1585,7 +1269,7 @@ function detect_seg(s, xx, yy, ttypes)
                 packet_counter, i, end_idx, x, y, end_x, end_y, std_dev))
         end
         
-        Print_tracker_varianza(s, std_dev)
+        if Print_tracker_varianza then Print_tracker_varianza(s, std_dev) end
         packet_counter = packet_counter + 1
 
         if estado_actual == ESTADO_MOVIMIENTO then
@@ -2733,7 +2417,7 @@ function run_global_reconstruction()
     end
     
     -- Imprimimos en la consola la línea final ya construida
-    Print_tracker_calidad_imitacion_data(linea_resumen, is_master)
+    if Print_tracker_calidad_imitacion_data then Print_tracker_calidad_imitacion_data(linea_resumen, is_master) end
 
     -- =========================================================================
 

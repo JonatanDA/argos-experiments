@@ -29,10 +29,12 @@ MOSTRAR_LINEAS_VIVO      = True
 MOSTRAR_HEATMAP_VIVO     = True
 
 GUARDAR_RESULTADOS       = True  
-CARPETA_RESULTADOS       = "Resultados/Robots/Qupa/Tr6/Evaluator_Speed_Noise"
+CARPETA_RESULTADOS       = "Resultados/Robots/Qupa/Tr7/Pentagono/Evaluator_Speed_Noise"
 
-PATRON_OBJETIVO          = "triangulo"
-PATRON_2                 = "Pentágono_irregular"
+#PATRON_OBJETIVO          = "triangulo"
+PATRON_OBJETIVO          = "Pentágono_irregular"
+
+# PATRON_2                 = "Pentágono_irregular"
 
 CSV_OUTPUT       = f"{CARPETA_RESULTADOS}/analisis_2d_qi.csv"
 GRAFICA_OUTPUT   = f"{CARPETA_RESULTADOS}/grafica_2d_qi.png"

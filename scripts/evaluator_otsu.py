@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 # ---------- CONFIGURACIÓN ----------
 # =============================================================================
 METRIC_OTSU_PATTERN     = "Otsu &"
-PLOTS_OUTPUT_DIR        = "Resultados/Robots/Qupa/Ks1/Otsu_Evaluation"
+PLOTS_OUTPUT_DIR        = "Resultados/Robots/Qupa/Tr7/Pentagono/Evaluator_otsu.1"  # Carpeta donde se guardan las gráficas y tablas
 SAVE_TABLE_ENABLED      = True
 SHOW_VARIANCE_IN_PLOTS  = True
 

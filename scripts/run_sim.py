@@ -91,13 +91,50 @@ TRACKER_DEPENDENCIES = {
 # =============================================================================
 # ---------- CONFIGURACIÓN DE RUTAS Y ARCHIVOS DE SIMULACIÓN ----------
 # =============================================================================
+# Preconfiguraciones guardadas (descomentar según el experimento):
+# DEFAULT_ARGOS_FILE              = "experiments/Footbot/Argos/Winfield.argos"   
+# DEFAULT_LUA_SCRIPT              = "experiments/Footbot/Controller/J_exp1.lua" 
+
+# DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/St.argos"   
+# DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/St10.lua" 
+
+# DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Tr.argos"   
+# DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Tr6.lua" 
+
 DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Tr.argos"   
 DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Tr7/Tr7.lua" 
 
+# DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Ks.argos"   
+# DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Ks1/Ks1.lua" 
+
 # =============================================================================
-# ---------- CONFIGURACIÓN DE TRACKERS MANUALES ACTIVOS ----------
+# ---------- CONFIGURACIÓN DE TRACKERS ACTIVOS ----------
 # =============================================================================
 TRACKERS = [    
+    {
+        "script": "scripts/tracker_trayectory.py",
+        "args": []
+    },
+    # {
+    #     "script": "scripts/tracker_calidad_imitacion.py",
+    #     "args": []
+    # },
+    # {
+    #     "script": "scripts/tracker_varianza.py",
+    #     "args": []
+    # },
+    # {
+    #     "script": "scripts/tracker_imitation_chain.py",
+    #     "args": []
+    # },
+    # {
+    #     "script": "scripts/tracker_imitated_pattern.py",
+    #     "args": []
+    # },
+    # {
+    #     "script": "scripts/tracker_clusters.py",
+    #     "args": []
+    # }
 ]
 
 # =============================================================================
@@ -132,7 +169,11 @@ MAX_IDLE_TIMEOUT_SEC            = 120
 # =============================================================================
 # ---------- CONFIGURACIÓN DE VERBOSIDAD ----------
 # =============================================================================
-NIVEL_LOG = 1
+# 0: Silencioso total (solo info inicial y conteo de exps). Todo pasa oculto. Ideal para pruebas masivas.
+# 1: Recomendado (Muestra eventos vitales: inicios, cierres, guardados de evaluadores).
+# 2: Detallado (Modo 1 + Prints específicos etiquetados de los Trackers, sin mezclar salidas ruidosas).
+# 3: Todo (Modo 2 + Datos puros de ARGoS como variables continuas, timers, alertas internas, etc).
+NIVEL_LOG = 3
 
 tracker_activity = {}
 print_lock = threading.Lock()

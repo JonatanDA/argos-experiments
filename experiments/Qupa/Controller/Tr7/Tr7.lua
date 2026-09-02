@@ -123,10 +123,10 @@ bigger = 1  -- Factor de escala para ajustar el tamaño de las figuras predefini
 if robot.id == "Qupa4" then
 
 elseif robot.id == "Qupa1" or robot.id == "Qupa2" or robot.id == "Qupa3" or robot.id == "Qupa5" then
-    figura = "triangulo_regular" -- "triangulo_regular" -- "octagono" -- "triangulo_irregular_1" --"Pentágono_irregular"  -- "Heptágono"-- "" -- "trayectoria_1" 
+    figura = "Pentágono_irregular" -- "triangulo_regular" -- "octagono" -- "triangulo_irregular_1" --"Pentágono_irregular"  -- "Heptágono"-- "" -- "trayectoria_1" 
     bigger = 1
 else
-    figura = "triangulo_regular" -- "triangulo_regular" -- "octagono" -- "triangulo_irregular_1" --"Pentágono_irregular"  -- "Heptágono"-- "" -- "trayectoria_1" 
+    figura = "Pentágono_irregular" -- "triangulo_regular" -- "octagono" -- "triangulo_irregular_1" --"Pentágono_irregular"  -- "Heptágono"-- "" -- "trayectoria_1" 
     bigger = 1  -- Factor de escala para ajustar el tamaño de las figuras predefinidas (ajusta según tu espacio de simulación)
 end
 
@@ -317,8 +317,10 @@ function master()
             --local indice_aleatorio = robot.random.uniform_int(1, #all_params)
             local indice_aleatorio = math.random(1, #all_params)
             parametros_elegidos = all_params[indice_aleatorio]
-            --log(" ========= Ejecutando patrón aleatorio (1,"..#all_params..") , -> "..indice_aleatorio..", "..robot.id.." ========= ")
-            --print_table(parametros_elegidos)
+            if robot.id == "Qupa4" then
+                log(" ========= Ejecutando patrón aleatorio (1,"..#all_params..") , -> "..indice_aleatorio..", "..robot.id.." ========= ")
+                print_table(parametros_elegidos)            
+            end
             
         else
             -- Respaldo de seguridad por si la tabla aún está vacía
@@ -339,7 +341,6 @@ end
 c4 = 0
 first_time_apprentice = true
 function apprentice()
-
     if c4 == 0 then
         store_relative_positions()
     end
@@ -462,28 +463,32 @@ function patron_imitado(params_P)
                 -- log("Angulo del segmento = "..indice.." = ".. params[indice][2]..", Angulo actual: "..move_angle*180/math.pi ..", "..robot.id)
                 if robot.id == "Qupa4" then 
                     if Print_tracker_trayectory_data then Print_tracker_trayectory_data("App", 0, 0) end
+
                 end
                 setleds("yellow")
 
                 if c1 == 2 then
                     PI_counter_seg = PI_counter_seg + 1
                     if indice == #params then
-
+                        if robot.id == "Qupa4" then 
+                            log("Patrón imitado finalizado por: ".. robot.id.." , cantidad de segmentos ejecutados: "..PI_counter_seg)
+                        end
                         indice = indice + 1
                         PI_end = true
                         r_Temporizador_1()
-
-                                    
+                        if robot.id == "Qupa4" then
+                            print("End_simulation")
+                        end
                         if c5 == 1 then
                             k = 1
                             -- log(" ========================================================================= ")
                             -- log(" Patrón Imitado: finalizado por: ".. robot.id)                            
-                            --imprimir_posicion(posiciones_guardadas)
+                            imprimir_posicion(posiciones_guardadas)
 
                         else
                             c5 = 1
                             k = 1
-                            --log(" ========= Patrón: finalizado por: ".. robot.id.." ========= ")
+                            -- log(" ========= Patrón: finalizado por: ".. robot.id.." ========= ")
                         end
                     else
                         --print_table(params)
