@@ -25,7 +25,7 @@ import json
 # ---------- 1. DICCIONARIO DE EVALUADORES Y DEPENDENCIAS ----------
 # =============================================================================
 EVALUATOR_DEPENDENCIES = {
-    "scripts/evaluator_ruido&Qi.py": {
+    "scripts/evaluator_qi_noise.py": {
         "lua_functions": [
             "evaluator_ruido",
             "Print_tracker_calidad_imitacion_data"
@@ -75,7 +75,7 @@ TRACKER_DEPENDENCIES = {
         "funciones_lua": ["evaluator_otsu"],
         "variables_lua": []
     },
-    "evaluator_ruido&Qi.py": {
+    "evaluator_qi_noise.py": {
         "descripcion": "Evalúa el comportamiento al inyectar ruido estadístico (ángulo y distancia).",
         "funciones_lua": ["evaluator_ruido"],
         "variables_lua": []
@@ -101,11 +101,14 @@ TRACKER_DEPENDENCIES = {
 # DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Tr.argos"   
 # DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Tr6.lua" 
 
-DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Tr.argos"   
-DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Tr7/Tr7.lua" 
+# DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Tr.argos"   
+# DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Tr7/Tr7.lua" 
 
-# DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Ks.argos"   
-# DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Ks1/Ks1.lua" 
+DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Ks.argos"   
+DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Ks1/Ks1.lua" 
+
+# DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Prueba1.argos"   
+# DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Pruebas/Move.lua" 
 
 # =============================================================================
 # ---------- CONFIGURACIÓN DE TRACKERS ACTIVOS ----------
@@ -113,6 +116,10 @@ DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Tr7/Tr7.lua"
 TRACKERS = [    
     {
         "script": "scripts/tracker_trayectory.py",
+        "args": []
+    },
+    {
+        "script": "scripts/tracker_paciencia.py",
         "args": []
     },
     # {
@@ -140,7 +147,7 @@ TRACKERS = [
 # =============================================================================
 # ---------- CONFIGURACIÓN DE VISUALIZACIÓN E INTERFAZ ----------
 # =============================================================================
-ENABLE_VISUALIZATION            = False              # True: Muestra la ventana de ARGoS, False: Headless (sin GUI)             
+ENABLE_VISUALIZATION            = True              # True: Muestra la ventana de ARGoS, False: Headless (sin GUI)             
 
 # --- Control de Pantalla Virtual (Xvfb) ---
 USE_XVFB_VIRTUAL_DISPLAY        = False             

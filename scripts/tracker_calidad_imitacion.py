@@ -27,7 +27,7 @@ import matplotlib.pyplot as plt
 # ---------- CONFIGURACIÓN DE VISUALIZACIÓN E INTERFAZ ----------
 # =============================================================================
 # --- Ventanas de Comparación ---
-SHOW_COMPARISON_WINDOWS = False                             # True: Abre pop-ups evaluando la calidad de imitación
+SHOW_COMPARISON_WINDOWS = True                             # True: Abre pop-ups evaluando la calidad de imitación
 MAX_WINDOWS             = 5                                 # Límite de ventanas abiertas simultáneamente
 
 # --- Ventana de Diccionario Original ---

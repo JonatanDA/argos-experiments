@@ -29,7 +29,7 @@ MOSTRAR_LINEAS_VIVO      = True
 MOSTRAR_HEATMAP_VIVO     = True
 
 GUARDAR_RESULTADOS       = True  
-CARPETA_RESULTADOS       = "Resultados/Robots/Qupa/Tr7/Pentagono/Evaluator_Speed_Noise"
+CARPETA_RESULTADOS       = "Resultados/Robots/Qupa/Tr7/Pentagono/Evaluator_Speed_Noise.1"
 
 #PATRON_OBJETIVO          = "triangulo"
 PATRON_OBJETIVO          = "Pentágono_irregular"

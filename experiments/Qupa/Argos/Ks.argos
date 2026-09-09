@@ -22,8 +22,8 @@
                 <positioning implementation="default"/>
                 <colored_blob_omnidirectional_camera implementation="rot_z_only" medium="leds" show_rays="false"/>
                 <range_and_bearing implementation="medium" medium="rab"/>
-                <ground implementation="rot_z_only"/>
                 <qupa_motor_ground implementation="rot_z_only"/>
+                <qupa_base_ground implementation="rot_z_only" />
             </sensors>
             <params/>
         </lua_controller>
@@ -39,8 +39,8 @@
                 <positioning implementation="default"/>
                 <colored_blob_omnidirectional_camera implementation="rot_z_only" medium="leds" show_rays="true"/>
                 <range_and_bearing implementation="medium" medium="rab"/>
-                <ground implementation="rot_z_only"/>
                 <qupa_motor_ground implementation="rot_z_only"/>
+                <qupa_base_ground implementation="rot_z_only" />
             </sensors>
             <params/>
         </lua_controller>

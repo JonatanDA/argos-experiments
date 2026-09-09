@@ -33,7 +33,7 @@ DEFAULT_YMIN        = -1.5      # Límite mínimo del eje Y
 DEFAULT_YMAX        = 1.5       # Límite máximo del eje Y
 
 DEAD_TIME_LIMIT     = 1         # Tiempo de inactividad permitido en segundos de simulación
-DELETE_ON_TIMEOUT   = False     # Elimina la trayectoria tras inactividad: True/False
+DELETE_ON_TIMEOUT   = True     # Elimina la trayectoria tras inactividad: True/False
 
 # --- CONTROL DE VELOCIDADES Y TIEMPO (FPS) ---
 SIM_TICKS_PER_SEC   = 10        # Ticks de simulación por segundo
@@ -56,7 +56,7 @@ PRESERVAR_NOMBRES_LIBRES= True          # Conserva nombres sin número: True/Fal
 
 # --- Representación del Observador (Cámara) 
 MODO_VISUAL_OBSERVADOR  = 1         # Observador: 0 = oculto, 1 = punto actual, 2 = trayectoria
-MODO_CIRCULO            = 0         # Círculo de visión: 0 = oculto, 1 = circulo visible , 2 = relleno semitransparente
+MODO_CIRCULO            = 2         # Círculo de visión: 0 = oculto, 1 = circulo visible , 2 = relleno semitransparente
 ANGULO_APERTURA         = 72.800    # Ángulo de apertura usado para calcular el radio de visión
 ALTURA_CAMARA           = 0.3       # Altura usada para calcular el radio de visión
 

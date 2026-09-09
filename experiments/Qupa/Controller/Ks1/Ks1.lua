@@ -47,7 +47,7 @@ BASE_RESTORE        = 200       -- Paciencia base a restaurar con datos refinado
 back_threshold        = 25      -- Distancia que retrocede el apprentice para evitar colisión. cm.
 front_threshold       = 25      -- Limite de distancia minima entre un objeto detectado y el apprentice para entrar a evadirlo
 max_tracking_distance = 25      -- Máxima distancia a la que se puede alejar el centroide antes de que el apprentice se acerque para no perder de vista. cm
-porcentaje            = 0.9     -- 1 < porcentaje < 0.33 , indica que tanto el apprentice busca acercarse al maestro cuando este cruza el max_tracking_distance.
+porcentaje            = 0.75     -- 1 < porcentaje < 0.33 , indica que tanto el apprentice busca acercarse al maestro cuando este cruza el max_tracking_distance.
 
 --
 distance_treshold   = 3*(speed_dem+d_speed)/ticks_per_second    -- Sensibilidad del apprentice a caambios en los puntos obtenidos del maestro durante la etapa de observación.
@@ -96,12 +96,12 @@ CONFIG = {
 
 -- CONFIGURACIÓN DEL MODELO DE RUIDO (SENSOR NOISE CONFIG)
 noise_cfg = {
-    ENABLE_NOISE            = true  ,    -- Si es false, el robot ve perfecto (Ground Truth)
+    ENABLE_NOISE            = false ,    -- Si es false, el robot ve perfecto (Ground Truth)
     USE_DISTANCE_DEPENDENT  = true  ,    -- El ruido aumenta si el objeto está lejos
     USE_OUTLIERS            = false ,    -- Activar lecturas "fantasma" o fallos graves
     USE_BIAS                = true  ,    -- Error sistemático (ej. sensor mal calibrado +2cm siempre)
     -- 
-    NOISE_BASE_RADIUS       = 0.0500   ,    -- Ruido constante base (ej. 1 cm de error mínimo)
+    NOISE_BASE_RADIUS       = 0.1000,    -- Ruido constante base (ej. 1 cm de error mínimo)
     NOISE_SIGMAS            = 2.0   ,    -- 2 sigmas = 95% de probabilidad de caer dentro del 'Radio Actual'
     NOISE_FACTOR            = 0.05  ,    -- Crece un 5% respecto a la distancia (ej. a 100cm, suma 5cm extra al radio)
     OUTLIER_PROB            = 0.01  ,    -- % de probabilidad de fallo catastrófico
@@ -125,7 +125,7 @@ end
 
 -- Loggeo de la información obtenida por el apprentice durante la etapa de Observación
 SRP_LOG_MODE        = 0 -- 0: Sin logs, 1: Parámetros obtenidos tras finalizar la observación de un maestro. 2. Paso a paso de la actualización de maestros, 3: Imprime todo.
-UP_LOG_MODE         = 0 -- 0: Sin logs, 1: Información sobre la paciencia (Tiempo que el apprentice actualiza para continuar o deter su aprendizaje) 
+UP_LOG_MODE         = 1 -- 0: Sin logs, 1: Información sobre la paciencia (Tiempo que el apprentice actualiza para continuar o deter su aprendizaje) 
 AL_LOG_MODE         = 0 -- 0: Sin logs, 1: Información sobre el Active Learning, 2: Información detallada del Active Learning, 3: Estados del active learning
 -------------------------------------------------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------------------------------------------------
@@ -553,12 +553,18 @@ end
 function update_patience(restore_type, count)
     if restore_type == "full" then
         current_patience = MAX_PATIENCE
-        if UP_LOG_MODE == 1 then log("[PACIENCIA] Restaurada completamente (" .. MAX_PATIENCE/ticks_per_second .. ") segundos.") end
+        if UP_LOG_MODE == 1 then 
+            log("[PACIENCIA] Restaurada completamente (" .. MAX_PATIENCE/ticks_per_second .. ") segundos.") 
+            print("[PACIENCIA] Restaurada completamente (" .. MAX_PATIENCE/ticks_per_second .. ") segundos.") 
+        end
     elseif restore_type == "partial" then
         local divisor = (count > 1) and (count - 1) or 1
         local restore_amount = math.floor(BASE_RESTORE / divisor)
         current_patience = math.min(MAX_PATIENCE, current_patience + restore_amount)
-        if UP_LOG_MODE == 1 then log("[PACIENCIA] Restauración parcial: +" .. restore_amount/ticks_per_second .. " segundos. Actual: " .. current_patience/ticks_per_second.." segundos") end
+        if UP_LOG_MODE == 1 then 
+            log("[PACIENCIA] Restauración parcial: +" .. restore_amount/ticks_per_second .. " segundos. Actual: " .. current_patience/ticks_per_second.." segundos") 
+            print("[PACIENCIA] Restauración parcial: +" .. restore_amount/ticks_per_second .. " segundos. Actual: " .. current_patience/ticks_per_second.." segundos") 
+        end
     end
 end
 
@@ -568,7 +574,10 @@ function check_patience_and_reconstruct()
     current_patience = current_patience - 1
 
     if current_patience <= 0 then
-        if _LOG_MODE == 1 then log("\n\n\n\n PACIENCIA AGOTADA: Ejecutando Reconstrucción...") end
+        if UP_LOG_MODE == 1 then 
+            log("\n\n\n\n [PACIENCIA] AGOTADA: Ejecutando Reconstrucción...") 
+            print("[PACIENCIA] AGOTADA: Ejecutando Reconstrucción...") 
+        end
 
         local datos_guardados = ParameterStorage.get_stored_data()
         local current_cfg = { CONFIG = CONFIG, LOG_MODE = SRP_LOG_MODE }   

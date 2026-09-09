@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-evaluator_ruido&Qi.py
+evaluator_qi_noise.py
 
 controllers compatibles: Ks1
 
@@ -42,7 +42,7 @@ GUARDAR_TABLA            = True
 GUARDAR_CSV              = True
 
 # ¿Dónde quieres guardar los archivos resultantes del experimento de ruido?
-CARPETA_RESULTADOS       = "Resultados/Robots/Qupa/Tr7/Pentagono/Evaluator_Ruido"
+CARPETA_RESULTADOS       = "Resultados/Robots/Qupa/Ks1/Evaluator_Ruido"
 
 # Patrones geométricos base contra los cuales contrastará la Calidad (Qi) 
 PATRON_1         = "triangulo"

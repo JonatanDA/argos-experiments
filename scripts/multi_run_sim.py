@@ -20,7 +20,7 @@ import threading
 # ---------- 1. CONFIGURACIÓN DEL EXPERIMENTO (VARIABLES A BARRER) ----------
 # =============================================================================
 
-NUM_EXP_M        = 5   # Repeticiones por cada configuración (Simulaciones idénticas)
+NUM_EXP_M        = 1   # Repeticiones por cada configuración (Simulaciones idénticas)
 
 # Definición de grupos de variables.
 # Formato de cada grupo: ( {variables}, NUM_PASOS_N, MODO_EVALUACION )
@@ -28,38 +28,46 @@ NUM_EXP_M        = 5   # Repeticiones por cada configuración (Simulaciones idé
 #       2 -> Combinatorio (Todas las mezclas posibles internamente en el grupo)
 VARIABLES_A_EVALUAR = [
     (
-        { # Grupo 1
-            "NOISE_LEVEL_DIST"  : (0.0, 0.05), 
-            "NOISE_LEVEL_ANGLE" : (0.0, 0.25),
+        { 
+            "NOISE_BASE_RADIUS"  : (0.0, 0.05), 
         }, 
         5, # NUMERO DE PASOS
         1   # MODO A EVALUAR
     ),
-    (
-        { # Grupo 2
-            "speed_dem": (5, 30)        
-        }, 
-        3, # NUMERO DE PASOS
-        1  # MODO A EVALUAR
-    )
+
+    # (
+    #     { # Grupo 1
+    #         "NOISE_LEVEL_DIST"  : (0.0, 0.05), 
+    #         "NOISE_LEVEL_ANGLE" : (0.0, 0.25),
+    #     }, 
+    #     5, # NUMERO DE PASOS
+    #     1   # MODO A EVALUAR
+    # ),
+    # (
+    #     { # Grupo 2
+    #         "speed_dem": (5, 30)        
+    #     }, 
+    #     3, # NUMERO DE PASOS
+    #     1  # MODO A EVALUAR
+    # )
 ]
 
 # =============================================================================
 # ---------- 2. CONFIGURACIÓN DE MULTI EVALUATORS ----------
 # =============================================================================
 MULTI_EVALUATORS = [
-    # {
-    #     "script": "scripts/evaluator_ruido&Qi.py",
-    #     "args": []
-    # }
+    {
+        "script": "scripts/evaluator_qi_noise.py",
+        "args": []
+    }
     # {
     #     "script": "scripts/evaluator_otsu.py",
     #     "args": []
     # }
-    {
-        "script": "scripts/evaluator_qi_speed_noise.py",
-        "args": []
-    },
+    # {
+    #     "script": "scripts/evaluator_qi_speed_noise.py",
+    #     "args": []
+    # },
 ]
 
 # =============================================================================
@@ -68,11 +76,14 @@ MULTI_EVALUATORS = [
 # ARGOS_SCRIPT     = "experiments/Qupa/Argos/Tr.argos"         
 # LUA_SCRIPT       = "experiments/Qupa/Controller/Tr6.lua" 
 
-ARGOS_SCRIPT     = "experiments/Qupa/Argos/Tr.argos"         
-LUA_SCRIPT       = "experiments/Qupa/Controller/Tr7/Tr7.lua" 
+# ARGOS_SCRIPT     = "experiments/Qupa/Argos/Tr.argos"        
+# LUA_SCRIPT       = "experiments/Qupa/Controller/Tr7/Tr7.lua"
 
 # ARGOS_SCRIPT     = "experiments/Qupa/Argos/Ks.argos"         
 # LUA_SCRIPT       = "experiments/Qupa/Controller/Ks1/Ks1.lua" 
+
+ARGOS_SCRIPT     = "experiments/Qupa/Argos/Ks.argos"         
+LUA_SCRIPT       = "experiments/Qupa/Controller/Pruebas/Ks1.lua" 
 
 RUN_SIM_SCRIPT   = "scripts/run_sim.py"                      
 TIMEOUT_SIMULACION = 90                                      
@@ -80,7 +91,7 @@ TIMEOUT_SIMULACION = 90
 # =============================================================================
 # ---------- CONFIGURACIÓN VISUAL Y VERBOSIDAD ----------
 # =============================================================================
-ENABLE_VISUALIZATION = False # Se enviará a run_sim.py para sobrescribir su valor por defecto
+ENABLE_VISUALIZATION = True # Se enviará a run_sim.py para sobrescribir su valor por defecto
 
 # =============================================================================
 # ---------- CONFIGURACIÓN DE VERBOSIDAD ----------
@@ -89,7 +100,7 @@ ENABLE_VISUALIZATION = False # Se enviará a run_sim.py para sobrescribir su val
 # 1: Recomendado (Muestra eventos vitales: inicios, cierres, guardados de evaluadores).
 # 2: Detallado (Modo 1 + Prints específicos etiquetados de los Trackers, sin mezclar salidas ruidosas).
 # 3: Todo (Modo 2 + Datos puros de ARGoS como variables continuas, timers, alertas internas, etc).
-NIVEL_LOG = 1
+NIVEL_LOG = 2
 
 def print_log(mensaje, nivel_minimo=0, end="\n"):
     if NIVEL_LOG >= nivel_minimo:
