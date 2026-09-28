@@ -20,54 +20,62 @@ import threading
 # ---------- 1. CONFIGURACIÓN DEL EXPERIMENTO (VARIABLES A BARRER) ----------
 # =============================================================================
 
-NUM_EXP_M        = 1   # Repeticiones por cada configuración (Simulaciones idénticas)
+NUM_EXP_M        = 20   # Repeticiones por cada configuración (Simulaciones idénticas)
 
 # Definición de grupos de variables.
 # Formato de cada grupo: ( {variables}, NUM_PASOS_N, MODO_EVALUACION )
 # MODO: 1 -> Simultáneo (Avanza las variables al mismo tiempo)
 #       2 -> Combinatorio (Todas las mezclas posibles internamente en el grupo)
 VARIABLES_A_EVALUAR = [
+    # (
+    #     { 
+    #         "NOISE_FACTOR"  : (0.0,0.15), 
+    #     }, 
+    #     7, # NUMERO DE PASOS
+    #     1   # MODO A EVALUAR
+    # ),
+
     (
+        { # Grupo 1
+            "factor_vel": (1, 2)        
+        }, 
+        3, # NUMERO DE PASOS
+        1  # MODO A EVALUAR
+    ),
+
+    (
+        # { # Grupo 2
+
+        #     "NOISE_LEVEL_DIST"  : (0.0, 0.05), 
+        #     "NOISE_LEVEL_ANGLE" : (0.0, 0.25),
+        # }, 
+        # 5, # NUMERO DE PASOS
+        # 1   # MODO A EVALUAR
+
         { 
-            "NOISE_BASE_RADIUS"  : (0.0, 0.05), 
+            "NOISE_FACTOR"  : (0.0,0.16), 
         }, 
         5, # NUMERO DE PASOS
         1   # MODO A EVALUAR
     ),
-
-    # (
-    #     { # Grupo 1
-    #         "NOISE_LEVEL_DIST"  : (0.0, 0.05), 
-    #         "NOISE_LEVEL_ANGLE" : (0.0, 0.25),
-    #     }, 
-    #     5, # NUMERO DE PASOS
-    #     1   # MODO A EVALUAR
-    # ),
-    # (
-    #     { # Grupo 2
-    #         "speed_dem": (5, 30)        
-    #     }, 
-    #     3, # NUMERO DE PASOS
-    #     1  # MODO A EVALUAR
-    # )
 ]
 
 # =============================================================================
 # ---------- 2. CONFIGURACIÓN DE MULTI EVALUATORS ----------
 # =============================================================================
 MULTI_EVALUATORS = [
-    {
-        "script": "scripts/evaluator_qi_noise.py",
-        "args": []
-    }
+    # {
+    #     "script": "scripts/evaluator_qi_noise.py",
+    #     "args": []
+    # },
     # {
     #     "script": "scripts/evaluator_otsu.py",
     #     "args": []
-    # }
-    # {
-    #     "script": "scripts/evaluator_qi_speed_noise.py",
-    #     "args": []
     # },
+    {
+        "script": "scripts/evaluator_qi_speed_noise.py",
+        "args": []
+    },
 ]
 
 # =============================================================================
@@ -79,11 +87,11 @@ MULTI_EVALUATORS = [
 # ARGOS_SCRIPT     = "experiments/Qupa/Argos/Tr.argos"        
 # LUA_SCRIPT       = "experiments/Qupa/Controller/Tr7/Tr7.lua"
 
-# ARGOS_SCRIPT     = "experiments/Qupa/Argos/Ks.argos"         
-# LUA_SCRIPT       = "experiments/Qupa/Controller/Ks1/Ks1.lua" 
+ARGOS_SCRIPT     = "experiments/Qupa/Argos/Ks_P.argos"         
+LUA_SCRIPT       = "experiments/Qupa/Controller/Ks1/Ks1.lua" 
 
-ARGOS_SCRIPT     = "experiments/Qupa/Argos/Ks.argos"         
-LUA_SCRIPT       = "experiments/Qupa/Controller/Pruebas/Ks1.lua" 
+# ARGOS_SCRIPT     = "experiments/Qupa/Argos/Ks.argos"         
+# LUA_SCRIPT       = "experiments/Qupa/Controller/Pruebas/Ks1.lua" 
 
 RUN_SIM_SCRIPT   = "scripts/run_sim.py"                      
 TIMEOUT_SIMULACION = 90                                      
@@ -91,7 +99,7 @@ TIMEOUT_SIMULACION = 90
 # =============================================================================
 # ---------- CONFIGURACIÓN VISUAL Y VERBOSIDAD ----------
 # =============================================================================
-ENABLE_VISUALIZATION = True # Se enviará a run_sim.py para sobrescribir su valor por defecto
+ENABLE_VISUALIZATION = False # Se enviará a run_sim.py para sobrescribir su valor por defecto
 
 # =============================================================================
 # ---------- CONFIGURACIÓN DE VERBOSIDAD ----------

@@ -1,4 +1,6 @@
+-- ============================================================================
 -- Archivo: Functions/Observer/Parameter_Storage.lua
+-- ============================================================================
 
 local ParameterStorage = {}
 
@@ -51,12 +53,13 @@ local function check_match(long_dat, short_dat, start_idx, cfg)
 end
 
 function ParameterStorage.add(new_dat, cfg)
-    if Global_Reconstruction_Done then return nil, 0 end 
+    if Global_Reconstruction_Done then return 0, 0 end 
     local found = false
-    local restore_type = nil
+    local restore_level = 0
     local restore_count = 0
 
     for i, exist in ipairs(DataBuffer.stored) do
+        -- Caso: Coincidencia del mismo tamaño
         if #exist.value == #new_dat.value and exist.type == new_dat.type then
             if check_match(exist, new_dat, 1, cfg) then
                 found = true
@@ -66,13 +69,14 @@ function ParameterStorage.add(new_dat, cfg)
                 end
                 table.insert(exist.same_size_merges, simple_fmt(new_dat.value))
                 if cfg.LOG_MODE == 1 then 
-                    log(string.format("[INFO] Dato Refinado (Promedio de %d): %s", exist.count, fmt_struct(exist)))
+                    log(string.format("[INFO] Dato Refinado (Promedio de %d) [NIVEL 1]: %s", exist.count, fmt_struct(exist)))
                 end
-                restore_type, restore_count = "partial", exist.count
+                restore_level, restore_count = 1, exist.count
                 break
             end
         end
 
+        -- Caso: El nuevo dato es más grande e incluye al existente
         if not found and #new_dat.value >= #exist.value + 2 then
             for start_idx = 2, #new_dat.value - #exist.value do
                 if check_match(new_dat, exist, start_idx, cfg) then
@@ -91,15 +95,16 @@ function ParameterStorage.add(new_dat, cfg)
                     exist.value = merged_values; exist.type = new_dat.type 
                     table.insert(exist.diff_size_merges, simple_fmt(new_dat.value))
                     if cfg.LOG_MODE == 1 then
-                        log(string.format("[INFO] Dato Actualizado (Extendido a %d val, solape en medio): %s", #exist.value, fmt_struct(exist)))
+                        log(string.format("[INFO] Dato Actualizado (Extendido a %d val, solape) [NIVEL 1]: %s", #exist.value, fmt_struct(exist)))
                     end
-                    restore_type, restore_count = "partial", exist.count
+                    restore_level, restore_count = 1, exist.count
                     break
                 end
             end
             if found then break end
         end
 
+        -- Caso: El nuevo dato es más pequeño y está contenido en el existente
         if not found and #exist.value >= #new_dat.value + 2 then
             for start_idx = 2, #exist.value - #new_dat.value do
                 if check_match(exist, new_dat, start_idx, cfg) then
@@ -111,9 +116,9 @@ function ParameterStorage.add(new_dat, cfg)
                     end
                     table.insert(exist.diff_size_merges, simple_fmt(new_dat.value))
                     if cfg.LOG_MODE == 1 then
-                        log(string.format("[INFO] Dato Actualizado (Subcadena promediada - Frec INTACTA %d): %s", exist.count, fmt_struct(exist)))
+                        log(string.format("[INFO] Dato Actualizado (Subcadena promediada) [NIVEL 1]: %s", fmt_struct(exist)))
                     end
-                    restore_type, restore_count = "partial", exist.count
+                    restore_level, restore_count = 1, exist.count
                     break
                 end
             end
@@ -121,22 +126,57 @@ function ParameterStorage.add(new_dat, cfg)
         end
     end
 
+    -- Caso: No se encontró una coincidencia exacta de integración, se añade como nuevo
     if not found then
+        local has_overlap = false
+        
+        -- Buscamos si existe al menos un elemento de solapamiento para decidir si es Nivel 2 o 3
+        for _, exist in ipairs(DataBuffer.stored) do
+            for i = 1, #new_dat.value do
+                local type_new = get_val_type(new_dat.type, i)
+                for j = 1, #exist.value do
+                    local type_exist = get_val_type(exist.type, j)
+                    if type_new == type_exist then
+                        local diff = math.abs(new_dat.value[i] - exist.value[j])
+                        local tol = (type_new == "A") and cfg.CONFIG.TOL_ANG or cfg.CONFIG.TOL_DIST
+                        if diff <= tol then
+                            has_overlap = true
+                            break
+                        end
+                    end
+                end
+                if has_overlap then break end
+            end
+            if has_overlap then break end
+        end
+
         local new_v = {}
         for _, v in ipairs(new_dat.value) do table.insert(new_v, v) end
         local entry = { value = new_v, type = new_dat.type, count = 1, same_size_merges = {}, diff_size_merges = {} }
         table.insert(DataBuffer.stored, entry)
-        restore_type, restore_count = "full", 1
+        
+        if has_overlap then
+            restore_level = 2
+            if cfg.LOG_MODE == 1 then
+                log(string.format("[INFO] Dato Añadido (Solapamiento Parcial) [NIVEL 2]: %s", fmt_struct(entry)))
+            end
+        else
+            restore_level = 3
+            if cfg.LOG_MODE == 1 then
+                log(string.format("[INFO] Dato Añadido (Totalmente Nuevo) [NIVEL 3]: %s", fmt_struct(entry)))
+            end
+        end
+        restore_count = 1
     end
 
-    return restore_type, restore_count
+    return restore_level, restore_count
 end
 
 -- ============================================================================
 -- NUEVA FUNCIÓN EXPORTADA: Empaqueta los parámetros y los almacena
 -- ============================================================================
 function ParameterStorage.package_and_add(params, valid_segments, cfg)
-    if not params or #params == 0 then return nil, 0 end
+    if not params or #params == 0 then return 0, 0 end
 
     local structure_values = {}
     local structure_type = nil 
@@ -155,8 +195,16 @@ function ParameterStorage.package_and_add(params, valid_segments, cfg)
             if structure_type == nil then structure_type = 0 end
         end
     end
+    
+    -- RESTRICCIÓN: Ignorar si la cadena generada tiene menos de 3 parámetros
+    if #structure_values < 3 then
+        if cfg.LOG_MODE == 1 then 
+            log(">> Dato ignorado: Estructura insuficiente ("..#structure_values.." parametros). Mínimo requerido: 3.") 
+        end
+        return 0, 0
+    end
 
-    if #structure_values > 0 and structure_type ~= nil then
+    if structure_type ~= nil then
         local data_packet = { value = structure_values, type = structure_type }
         
         if cfg.LOG_MODE == 1 then 
@@ -167,7 +215,7 @@ function ParameterStorage.package_and_add(params, valid_segments, cfg)
         return ParameterStorage.add(data_packet, cfg)
     end
     
-    return nil, 0
+    return 0, 0
 end
 
 return ParameterStorage

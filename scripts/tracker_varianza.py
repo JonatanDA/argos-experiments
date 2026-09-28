@@ -20,22 +20,23 @@ CARACTERÍSTICAS PRINCIPALES:
 # =============================================================================
 # --- Control de Gráficas y Modos ---
 MOSTRAR_TRAYECTORIA             = 2                 # 0: Sin gráfica visual, 1: Solo varianza, 2: Varianza + Trayectoria
-MODO_GRAFICA                    = 0                 # 0: Todos los maestros, 1: Solo los del filtro
+MODO_SUBSAMPLING                = 0                 # 0: Ver todos los puntos, 1: Solo puntos subsampleados, 2: Gráfica dual (Todos vs Subsampling)
 VENTANA_N                       = 10                # Límite máximo de ventanas emergentes simultáneas (cierra la más antigua).
 GRAFICAR_VARIANZA_COMO_LINEA    = True              # True: Grafica varianza como línea continua, False: Como puntos discretos
-GRAFICAR_TRAYECTORIA_COMO_LINEA = False             # True: Grafica trayectoria como línea continua, False: Como puntos discretos
+GRAFICAR_TRAYECTORIA_COMO_LINEA = True              # True: Grafica trayectoria como línea continua, False: Como puntos discretos
 
 # =============================================================================
 # ---------- CONFIGURACIÓN DE GUARDADO DE DATOS ----------
 # =============================================================================
 GUARDAR_IMAGEN          = 2                 # 0: No guardar, 1: Guardar solo Varianza, 2: Guardar Varianza + Trayectoria
-DIRECTORIO_GUARDADO     = "Resultados/Robots/Qupa/Tr7/Pentagono/Varianza" # Directorio donde se almacenarán las capturas
+DIRECTORIO_GUARDADO     = "Resultados/Robots/Qupa/Ks1/Varianza" # Directorio donde se almacenarán las capturas
 NOMBRE_BASE             = "Qa"              # Prefijo de la imagen guardada. (Ej: 'ma' genera 'ma1.png', 'ma2.png')
 
 # =============================================================================
 # ---------- CONFIGURACIÓN DEL TRACKER Y SISTEMA ----------
 # =============================================================================
 # --- Identificadores y Filtros ---
+MODO_GRAFICA            = 1                 # 0: Todos los maestros, 1: Solo los del filtro
 FILTRO_MAESTROS         = "None"            # IDs de los maestros a escuchar (ej. "None" o "1,2")
 
 # --- Control de Finalización ---
@@ -65,8 +66,45 @@ def parse_line(line):
     Parsea la línea detectando si se envían 1 dato (varianza) o >=2 datos (coordenadas de trayectoria).
     Normaliza MasterX a MaestroX para que coincidan en el mismo diccionario.
     """
-    if '&' not in line: return None
-    parts = line.split('&', 1)
+    line_str = line.strip()
+    if not line_str: return None
+
+    # --- 0. LÓGICA PARA LÍNEA DE SUBSAMPLING ---
+    # Ejemplo: [varianza](tamano_subsampling=15
+    if line_str.startswith("[varianza](tamano_subsampling="):
+        match = re.search(r'tamano_subsampling\s*=\s*(\d+)', line_str)
+        if match:
+            try:
+                val = int(match.group(1))
+                return 'subsampling', None, 'sub', val, 0.0
+            except ValueError:
+                pass
+        return None
+
+    # --- 1. LÓGICA PARA NUEVO FORMATO DE TRAYECTORIA ---
+    # Ejemplo: [trajectory];Master74;1,2032686387454;0,28824953661076
+    if line_str.startswith("[trajectory];"):
+        parts = line_str.split(';')
+        if len(parts) >= 4:
+            name_raw = parts[1].strip()
+            name_clean = name_raw.lower().replace(" ", "")
+            
+            # Normalización: "master" se convierte en "maestro"
+            if name_clean.startswith("master"):
+                name_clean = name_clean.replace("master", "maestro")
+                
+            if name_clean.startswith("maestro"):
+                try:
+                    x = float(parts[2].replace(',', '.'))
+                    y = float(parts[3].replace(',', '.'))
+                    return 'maestro', name_clean, 'traj', x, y
+                except ValueError:
+                    pass
+        return None
+
+    # --- 2. LÓGICA PARA FORMATO DE VARIANZA (Y ANTIGUAS TRAYECTORIAS) ---
+    if '&' not in line_str: return None
+    parts = line_str.split('&', 1)
     name_raw = parts[0].strip()
     nums = NUMBER_RE.findall(parts[1])
     
@@ -130,7 +168,7 @@ def stdin_reader(q, stop_event, end_pattern, last_time_holder):
     finally:
         stop_event.set()
 
-def dibujar_canvas(m_name, fig, ax_m, ax_t, data_maestro, mode_config):
+def dibujar_canvas(m_name, fig, ax_m, ax_t1, data_maestro, mode_config, subsampling_val=1, ax_t2=None):
     """
     Función centralizada para dibujar. Se usa tanto para la GUI interactiva como para renderizar 
     las imágenes de guardado en background de forma independiente.
@@ -160,27 +198,87 @@ def dibujar_canvas(m_name, fig, ax_m, ax_t, data_maestro, mode_config):
         ax_m.scatter([x_data_var[-1]], [vars_data[-1]], s=25, color='red')
 
     # --- 2. Gráfica de Trayectoria (Opcional) ---
-    if mode_config == 2 and ax_t is not None:
-        ax_t.clear()
-        if xs_data and ys_data:
-            ax_t.set_title(f'Trayectoria: {m_name}')
-            ax_t.set_xlabel('X')
-            ax_t.set_ylabel('Y')
-            ax_t.grid(True)
-            if GRAFICAR_TRAYECTORIA_COMO_LINEA:
-                ax_t.plot(xs_data, ys_data, lw=1.5, color='blue', alpha=0.7)
+    if mode_config == 2 and ax_t1 is not None:
+        step = max(1, int(subsampling_val))
+        
+        if MODO_SUBSAMPLING == 2:
+            # Centro: Todos los datos
+            ax_t1.clear()
+            if xs_data and ys_data:
+                ax_t1.set_title(f'Trayectoria: {m_name}')
+                ax_t1.set_xlabel('X')
+                ax_t1.set_ylabel('Y')
+                ax_t1.grid(True)
+                if GRAFICAR_TRAYECTORIA_COMO_LINEA:
+                    ax_t1.plot(xs_data, ys_data, lw=1.5, color='blue', alpha=0.7)
+                else:
+                    ax_t1.scatter(xs_data, ys_data, s=25, color='blue', alpha=0.7)
+                ax_t1.scatter([xs_data[-1]], [ys_data[-1]], s=25, color='green', zorder=5)
+                ax_t1.scatter([xs_data[0]], [ys_data[0]], s=20, color='black', marker='x', label='Inicio')
+                ax_t1.legend()
             else:
-                ax_t.scatter(xs_data, ys_data, s=25, color='blue', alpha=0.7)
-            ax_t.scatter([xs_data[-1]], [ys_data[-1]], s=25, color='green', zorder=5)
-            # Marcar el punto de inicio con otro color para contexto visual
-            ax_t.scatter([xs_data[0]], [xs_data[0]], s=20, color='black', marker='x', label='Inicio')
-            ax_t.legend()
+                ax_t1.set_title('Sin datos de trayectoria')
+                ax_t1.text(0.5, 0.5, 'No se registraron posiciones', 
+                          horizontalalignment='center', verticalalignment='center', 
+                          transform=ax_t1.transAxes, color='gray')
+                ax_t1.axis('off')
+
+            # Derecha: Subsampling
+            if ax_t2 is not None:
+                ax_t2.clear()
+                if xs_data and ys_data:
+                    xs_sub = xs_data[::step]
+                    ys_sub = ys_data[::step]
+                    ax_t2.set_title(f'Trayectoria (Subsampling {step}): {m_name}')
+                    ax_t2.set_xlabel('X')
+                    ax_t2.set_ylabel('Y')
+                    ax_t2.grid(True)
+                    if GRAFICAR_TRAYECTORIA_COMO_LINEA:
+                        ax_t2.plot(xs_sub, ys_sub, lw=1.5, color='blue', alpha=0.7)
+                    else:
+                        ax_t2.scatter(xs_sub, ys_sub, s=25, color='blue', alpha=0.7)
+                    if xs_sub and ys_sub:
+                        ax_t2.scatter([xs_sub[-1]], [ys_sub[-1]], s=25, color='green', zorder=5)
+                        ax_t2.scatter([xs_sub[0]], [ys_sub[0]], s=20, color='black', marker='x', label='Inicio')
+                    ax_t2.legend()
+                else:
+                    ax_t2.set_title('Sin datos de trayectoria')
+                    ax_t2.text(0.5, 0.5, 'No se registraron posiciones', 
+                              horizontalalignment='center', verticalalignment='center', 
+                              transform=ax_t2.transAxes, color='gray')
+                    ax_t2.axis('off')
         else:
-            ax_t.set_title('Sin datos de trayectoria')
-            ax_t.text(0.5, 0.5, 'No se registraron posiciones', 
-                      horizontalalignment='center', verticalalignment='center', 
-                      transform=ax_t.transAxes, color='gray')
-            ax_t.axis('off')
+            ax_t1.clear()
+            if xs_data and ys_data:
+                if MODO_SUBSAMPLING == 1:
+                    xs_plot = xs_data[::step]
+                    ys_plot = ys_data[::step]
+                    titulo_traj = f'Trayectoria (Subsampling {step}): {m_name}'
+                else:
+                    xs_plot = xs_data
+                    ys_plot = ys_data
+                    titulo_traj = f'Trayectoria: {m_name}'
+
+                ax_t1.set_title(titulo_traj)
+                ax_t1.set_xlabel('X')
+                ax_t1.set_ylabel('Y')
+                ax_t1.grid(True)
+                
+                if GRAFICAR_TRAYECTORIA_COMO_LINEA:
+                    ax_t1.plot(xs_plot, ys_plot, lw=1.5, color='blue', alpha=0.7)
+                else:
+                    ax_t1.scatter(xs_plot, ys_plot, s=25, color='blue', alpha=0.7)
+                    
+                if xs_plot and ys_plot:
+                    ax_t1.scatter([xs_plot[-1]], [ys_plot[-1]], s=25, color='green', zorder=5)
+                    ax_t1.scatter([xs_plot[0]], [ys_plot[0]], s=20, color='black', marker='x', label='Inicio')
+                ax_t1.legend()
+            else:
+                ax_t1.set_title('Sin datos de trayectoria')
+                ax_t1.text(0.5, 0.5, 'No se registraron posiciones', 
+                          horizontalalignment='center', verticalalignment='center', 
+                          transform=ax_t1.transAxes, color='gray')
+                ax_t1.axis('off')
 
     fig.canvas.draw_idle()
 
@@ -208,6 +306,7 @@ def main():
     last_seen_maestro = {}       
     maestro_needs_plot = {}      
     historial_ventanas = [] # Usado para controlar el límite de ventanas
+    current_subsampling = 1 # Valor global de subsampling detectado
 
     if MOSTRAR_TRAYECTORIA > 0:
         plt.ion() 
@@ -223,6 +322,11 @@ def main():
                 except queue.Empty:
                     break
                 
+                # Control de línea de subsampling
+                if category == 'subsampling':
+                    current_subsampling = int(val1)
+                    continue
+
                 # Control por Modo de Gráfica (1: Aplica el filtro, 0: Lo ignora)
                 if MODO_GRAFICA == 1 and maestros_filter and name not in maestros_filter:
                     continue
@@ -240,7 +344,7 @@ def main():
                         if VENTANA_N > 0 and len(historial_ventanas) >= VENTANA_N:
                             oldest_m = historial_ventanas.pop(0)
                             if oldest_m in maestro_figs:
-                                fig_old, _, _ = maestro_figs[oldest_m]
+                                fig_old = maestro_figs[oldest_m][0]
                                 plt.close(fig_old)
                                 del maestro_figs[oldest_m]
                                 
@@ -248,12 +352,17 @@ def main():
 
                         # Creación de la ventana
                         if MOSTRAR_TRAYECTORIA == 2:
-                            fig_m, axes = plt.subplots(1, 2, figsize=(10, 4))
-                            ax_m, ax_t = axes[0], axes[1]
-                            maestro_figs[name] = (fig_m, ax_m, ax_t)
+                            if MODO_SUBSAMPLING == 2:
+                                fig_m, axes = plt.subplots(1, 3, figsize=(15, 4))
+                                ax_m, ax_t1, ax_t2 = axes[0], axes[1], axes[2]
+                                maestro_figs[name] = (fig_m, ax_m, ax_t1, ax_t2)
+                            else:
+                                fig_m, axes = plt.subplots(1, 2, figsize=(10, 4))
+                                ax_m, ax_t = axes[0], axes[1]
+                                maestro_figs[name] = (fig_m, ax_m, ax_t, None)
                         else: # MOSTRAR_TRAYECTORIA == 1
                             fig_m, ax_m = plt.subplots(figsize=(5, 3))
-                            maestro_figs[name] = (fig_m, ax_m, None)
+                            maestro_figs[name] = (fig_m, ax_m, None, None)
                         
                         fig_m.canvas.manager.set_window_title(f'Resultados - {name}')
                         plt.show(block=False)
@@ -270,8 +379,8 @@ def main():
                     if maestro_needs_plot.get(m_name, False):
                         tiempo_silencio = current_time - last_seen_maestro.get(m_name, current_time)
                         if tiempo_silencio >= TIEMPO_ESPERA_MAESTRO:
-                            fig_m, ax_m, ax_t = figs
-                            dibujar_canvas(m_name, fig_m, ax_m, ax_t, data_maestros[m_name], MOSTRAR_TRAYECTORIA)
+                            fig_m, ax_m, ax_t1, ax_t2 = figs
+                            dibujar_canvas(m_name, fig_m, ax_m, ax_t1, data_maestros[m_name], MOSTRAR_TRAYECTORIA, current_subsampling, ax_t2)
                             maestro_needs_plot[m_name] = False
                 
                 plt.pause(0.1) # Mantiene viva la interfaz
@@ -291,8 +400,8 @@ def main():
     if MOSTRAR_TRAYECTORIA > 0:
         for m_name, figs in maestro_figs.items():
             if maestro_needs_plot.get(m_name, False):
-                fig_m, ax_m, ax_t = figs
-                dibujar_canvas(m_name, fig_m, ax_m, ax_t, data_maestros[m_name], MOSTRAR_TRAYECTORIA)
+                fig_m, ax_m, ax_t1, ax_t2 = figs
+                dibujar_canvas(m_name, fig_m, ax_m, ax_t1, data_maestros[m_name], MOSTRAR_TRAYECTORIA, current_subsampling, ax_t2)
 
     # --- GUARDADO INDEPENDIENTE DE IMÁGENES ---
     if GUARDAR_IMAGEN > 0:
@@ -305,14 +414,20 @@ def main():
                 
             # Construir un lienzo exclusivo para el guardado (no se muestra al usuario)
             if GUARDAR_IMAGEN == 2:
-                fig_save, axes = plt.subplots(1, 2, figsize=(10, 4))
-                ax_m_save, ax_t_save = axes[0], axes[1]
+                if MODO_SUBSAMPLING == 2:
+                    fig_save, axes = plt.subplots(1, 3, figsize=(15, 4))
+                    ax_m_save, ax_t1_save, ax_t2_save = axes[0], axes[1], axes[2]
+                else:
+                    fig_save, axes = plt.subplots(1, 2, figsize=(10, 4))
+                    ax_m_save, ax_t1_save = axes[0], axes[1]
+                    ax_t2_save = None
             else: # GUARDAR_IMAGEN == 1
                 fig_save, ax_m_save = plt.subplots(figsize=(5, 3))
-                ax_t_save = None
+                ax_t1_save = None
+                ax_t2_save = None
 
             # Pintar el canvas y guardarlo
-            dibujar_canvas(m_name, fig_save, ax_m_save, ax_t_save, data_m, GUARDAR_IMAGEN)
+            dibujar_canvas(m_name, fig_save, ax_m_save, ax_t1_save, data_m, GUARDAR_IMAGEN, current_subsampling, ax_t2_save)
             
             match_num = re.search(r'\d+', m_name)
             sufijo = match_num.group(0) if match_num else m_name

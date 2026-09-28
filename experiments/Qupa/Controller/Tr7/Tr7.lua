@@ -112,8 +112,8 @@ USE_ANGLE_NOISE = true         -- Ruido en la medición del ángulo
 USE_BIAS = false                -- Error sistemático (ej. sensor mal calibrado +2cm siempre)
 
 -- Parámetros de Intensidad
-NOISE_LEVEL_DIST    = 0.0200       -- % de error proporcional a la distancia
-NOISE_LEVEL_ANGLE   = 0.1000       -- ±2 grados de desviación estándar
+NOISE_LEVEL_DIST    = 0.0500       -- % de error proporcional a la distancia
+NOISE_LEVEL_ANGLE   = 0.2500       -- ±2 grados de desviación estándar
 OUTLIER_PROB        = 0.01           -- 1% de probabilidad de fallo catastrófico
 BIAS_OFFSET         = 1.5               -- Cm extra que agrega el sensor por defecto (si USE_BIAS es true)
 

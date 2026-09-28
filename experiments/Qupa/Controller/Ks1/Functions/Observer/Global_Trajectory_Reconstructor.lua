@@ -15,6 +15,7 @@ local LOG_TABLA_FRAGMENTOS = true  -- 1. true/false: Imprimir o no la tabla de f
 local LOG_TERMOSTATO       = true  -- 2. true/false: Imprimir o no la auto-calibración y el filtro de ruido
 local LOG_ARBITRO          = 1     -- 3. 0: Nada, 1: Resumen ganador, 2: Detalle de puntajes y caminos propuestos
 local LOG_TRADUCCION       = true  -- 4. true/false: Imprimir o no la traducción física de los patrones finales
+local LOG_RECURSION_DEBUG  = false -- 5. true/false: Activa impresiones para evitar congelamientos en M2
 
 local ARBITER_CONFIG = {}
 local ngram_db = {}
@@ -129,6 +130,9 @@ local function calibrar_hiperparametros(freq_array, current_ngram_db, cfg)
         if indice_orden < 0.0 then indice_orden = 0.0 end
     end
     
+    -- GUARDAMOS EL ÍNDICE DE ORDEN PARA ADAPTACIÓN DINÁMICA DE M2
+    ARBITER_CONFIG.INDICE_ORDEN = indice_orden 
+    
     local ratio_pureza = 0
     if suma_frecuencias > 0 then
         ratio_pureza = pureza_total / suma_frecuencias
@@ -185,6 +189,87 @@ local function calcular_limite_ruido(frecuencias)
     return max_freq * ARBITER_CONFIG.RUIDO_UMBRAL_RELATIVO
 end
 
+-- =========================================================================
+--  FUNCIONES DE APOYO PARA REDUCCIÓN DE FRAGMENTOS (PRE-PROCESAMIENTO)
+-- =========================================================================
+local function check_subset_match(long_val, short_val, start_idx, long_type, short_type, cfg)
+    if get_val_type(long_type, start_idx) ~= get_val_type(short_type, 1) then return false end
+    for k = 1, #short_val do
+        local l_idx = start_idx + k - 1
+        local v_type = get_val_type(short_type, k)
+        local diff = math.abs(long_val[l_idx] - short_val[k])
+        local tol = (v_type == "A") and cfg.CONFIG.TOL_ANG or cfg.CONFIG.TOL_DIST
+        if diff > tol then return false end
+    end
+    return true
+end
+
+-- Absorbe fragmentos pequeños que están completamente contenidos en fragmentos más grandes.
+local function reduce_fragments_pool(pool, cfg)
+    local reduced_pool = {}
+    local group_logs = {}
+    local skip = {}
+    
+    -- Ordenamos de mayor a menor tamaño para que los grandes absorban a los pequeños
+    table.sort(pool, function(a,b) return #a.value > #b.value end)
+    
+    for i = 1, #pool do
+        if not skip[i] then
+            local current_target = pool[i]
+            local absorbed_ids = { current_target.id }
+            local merged_any = false
+            
+            for j = i + 1, #pool do
+                if not skip[j] then
+                    local candidate = pool[j]
+                    
+                    if #current_target.value >= #candidate.value then
+                        -- Revisamos si 'candidate' encaja en 'current_target'
+                        for start_idx = 1, #current_target.value - #candidate.value + 1 do
+                            if check_subset_match(current_target.value, candidate.value, start_idx, current_target.type, candidate.type, cfg) then
+                                
+                                -- Promedio ponderado para no perder el peso de las frecuencias previas
+                                local c1 = current_target.count or 1
+                                local c2 = candidate.count or 1
+                                local divisor = c1 + c2
+                                
+                                for k = 1, #candidate.value do
+                                    local t_idx = start_idx + k - 1
+                                    local sum = (current_target.value[t_idx] * c1) + (candidate.value[k] * c2)
+                                    current_target.value[t_idx] = sum / divisor
+                                end
+                                
+                                current_target.count = divisor
+                                for cid, _ in pairs(candidate.consumed_ids or {}) do
+                                    current_target.consumed_ids[cid] = true
+                                end
+                                
+                                table.insert(absorbed_ids, candidate.id)
+                                merged_any = true
+                                skip[j] = true
+                                break -- Pasamos al siguiente candidato
+                            end
+                        end
+                    end
+                end
+            end
+            
+            if merged_any then
+                table.insert(group_logs, {
+                    ids = absorbed_ids,
+                    result_str = fmt_struct(current_target)
+                })
+            end
+            
+            table.insert(reduced_pool, current_target)
+        end
+    end
+    
+    return reduced_pool, group_logs
+end
+
+-- =========================================================================
+
 local function calculate_overlap(s1, s2, min_ov, cfg)
     local len1, len2 = #s1.value, #s2.value
     local max_ov = math.min(len1, len2)
@@ -207,11 +292,14 @@ end
 local function merge_fragments(s1, s2, overlap)
     local new_vals = {}
     for k=1, #s1.value - overlap do table.insert(new_vals, s1.value[k]) end
+    
+    -- AQUÍ SE REALIZA EL PROMEDIO MATEMÁTICO DE LAS SUPERPOSICIONES
     for k=0, overlap - 1 do 
         local v1 = s1.value[#s1.value - overlap + 1 + k]
         local v2 = s2.value[1 + k]
         table.insert(new_vals, (v1+v2)/2) 
     end
+    
     for k=overlap + 1, #s2.value do table.insert(new_vals, s2.value[k]) end
     
     local combined_id = s1.id .. "+" .. s2.id
@@ -256,13 +344,37 @@ local function solve_greedy(initial_pool, cfg)
     return pool
 end
 
-local function recursive_finder(current_pool, history_log, cfg)
+-- =========================================================================
+--  SISTEMA ANTI-CONGELAMIENTO (CORTOCIRCUITO M2)
+-- =========================================================================
+local debug_recursions = 0
+local m2_aborted = false
+
+local function recursive_finder(current_pool, history_log, cfg, dynamic_min_overlap)
+    if m2_aborted then return end -- Cortocircuito para salir rápido de las ramas de recursión
+    
+    debug_recursions = debug_recursions + 1
+    
+    -- LÍMITE DE EMERGENCIA
+    if debug_recursions > (cfg.CONFIG.MAX_RECURSIONS_M2 or 5000) then
+        if LOG_RECURSION_DEBUG then
+            print(string.format("[ALERTA CRÍTICA M2] Límite de %d iteraciones superado. Abortando árbol de búsqueda para evitar congelamiento...", cfg.CONFIG.MAX_RECURSIONS_M2))
+        end
+        m2_aborted = true
+        return
+    end
+
+    if LOG_RECURSION_DEBUG and (debug_recursions % 500 == 0) then 
+        print("[ALERTA RECURSIVIDAD] recursive_finder iteración: " .. debug_recursions .. " | Tamaño del pool: " .. #current_pool) 
+    end
+
     local made_merge = false
     local candidates = {}
     for i=1, #current_pool do
         for j=1, #current_pool do
             if i ~= j then
-                local ov = calculate_overlap(current_pool[i], current_pool[j], cfg.CONFIG.MIN_OVERLAP_M2, cfg)
+                -- Utilizamos el solape dinámico en lugar del estático
+                local ov = calculate_overlap(current_pool[i], current_pool[j], dynamic_min_overlap, cfg)
                 if ov > 0 then table.insert(candidates, {i=i, j=j, ov=ov}) end
             end
         end
@@ -272,6 +384,8 @@ local function recursive_finder(current_pool, history_log, cfg)
         made_merge = true
         table.sort(candidates, function(a,b) return a.ov > b.ov end)
         for _, cand in ipairs(candidates) do
+            if m2_aborted then break end -- Detiene el for-loop si el cortocircuito se activó en una llamada profunda
+            
             local next_pool = {}
             local merged = merge_fragments(current_pool[cand.i], current_pool[cand.j], cand.ov)
             table.insert(next_pool, merged)
@@ -281,11 +395,12 @@ local function recursive_finder(current_pool, history_log, cfg)
             local next_history = {} 
             for _, h in ipairs(history_log) do table.insert(next_history, h) end
             table.insert(next_history, string.format("   Merge %s+%s (Ov:%d)", current_pool[cand.i].id, current_pool[cand.j].id, cand.ov))
-            recursive_finder(next_pool, next_history, cfg)
+            
+            recursive_finder(next_pool, next_history, cfg, dynamic_min_overlap)
         end
     end
 
-    if not made_merge then 
+    if not made_merge and not m2_aborted then 
         table.insert(raw_solutions_found, { pool_result = current_pool, history = history_log }) 
     end
 end
@@ -318,11 +433,29 @@ local function select_best_solution_m2(solutions, cfg)
     return unique_list[1]
 end
 
-local function solve_smart_backtracking_all(initial_pool, cfg)
+local function solve_smart_backtracking_all(initial_pool, cfg, dynamic_min_overlap)
+    if LOG_RECURSION_DEBUG then
+        print(string.format("[DEBUG M2] -> Iniciando Backtracking M2. Pool: %d | Solape Requerido: %d", #initial_pool, dynamic_min_overlap))
+    end
+
     raw_solutions_found = {} 
     local sorted_pool = clone_pool(initial_pool)
     table.sort(sorted_pool, function(a,b) return #a.value > #b.value end)
-    recursive_finder(sorted_pool, {}, cfg)
+    
+    debug_recursions = 0
+    m2_aborted = false
+    
+    recursive_finder(sorted_pool, {}, cfg, dynamic_min_overlap)
+    
+    -- Si abortó, notificamos a la función principal retornando nil
+    if m2_aborted then 
+        return nil 
+    end
+    
+    if LOG_RECURSION_DEBUG then
+        print("[DEBUG M2] -> Finalizado con éxito. Llamadas recursivas totales: " .. debug_recursions)
+    end
+    
     return select_best_solution_m2(raw_solutions_found, cfg)
 end
 
@@ -356,19 +489,19 @@ local function evaluar_hipotesis_m3(clean_pool, current_ngram_db, total_data_vol
                 table.insert(source_fragments_list, struct.id)
             end
         end
-        
+       
         local coverage_norm_m3 = coverage_count / total_data_volume
         local lados = 4 
         if best_pure_ngram.a ~= 0 then lados = math.floor((360 / math.abs(best_pure_ngram.a)) + 0.5) end
-        
+       
         local parametros_m3 = lados * 2
         local complexity_norm_m3 = parametros_m3 / total_data_volume
         m3_score = (coverage_norm_m3 * ARBITER_CONFIG.BONO_REGULARIDAD) - (complexity_norm_m3 * cfg.CONFIG.PESO_COMPLEJIDAD)
-        
+       
         local synthetic_vals = {}
         for i=1, lados do table.insert(synthetic_vals, best_pure_ngram.d); table.insert(synthetic_vals, best_pure_ngram.a) end
         m3_hypothesis = { type = 0, value = synthetic_vals, id = "Poligono_Iter"..iteration, count = coverage_count }
-        
+       
     end
 
     return m3_score, m3_hypothesis, m3_covered_ids
@@ -394,6 +527,8 @@ local function process_numeric_result(result_struct, patron_id, cfg)
         end
     end
     
+    local dropped_segment_flag = false
+    
     if #current_pattern_params >= 3 then
         local first_seg = current_pattern_params[1]
         local last_seg = current_pattern_params[#current_pattern_params]
@@ -402,7 +537,7 @@ local function process_numeric_result(result_struct, patron_id, cfg)
         if math.abs(first_seg[1] - last_seg[1]) <= tol_dist then
             local x, y = 0, 0
             local theta_deg = 0
-            
+           
             for i = 1, #current_pattern_params - 1 do
                 local d = current_pattern_params[i][1]
                 local a = current_pattern_params[i][2]
@@ -411,18 +546,37 @@ local function process_numeric_result(result_struct, patron_id, cfg)
                 x = x + d * math.cos(theta_rad)
                 y = y + d * math.sin(theta_rad)
             end
-            
+           
             local dist_al_origen = math.sqrt(x^2 + y^2)
             local tol_cierre = tol_dist
-            
+           
             if dist_al_origen <= tol_cierre then
                 table.remove(current_pattern_params, #current_pattern_params)
+                dropped_segment_flag = true
             end
         end
     end
 
     if LOG_TRADUCCION then
         log(string.format("\n[TRADUCCIÓN FÍSICA - PATRÓN %d]", patron_id))
+        
+        if dropped_segment_flag then
+            local kept_vals = {}
+            local elements_to_keep = #current_pattern_params * 2
+            elements_to_keep = math.min(elements_to_keep, #values)
+            
+            for k = 1, elements_to_keep do
+                table.insert(kept_vals, string.format("%.2f", values[k]))
+            end
+            
+            local t_str = (current_type == 1) and "Ang" or "Dist"
+            local count_str = (result_struct.count and result_struct.count > 1) and string.format(" [x%d]", result_struct.count) or ""
+            local new_chain_str = string.format("(%s)%s {%s}", t_str, count_str, table.concat(kept_vals, ", "))
+            
+            log("   >> LÓGICA DE CIERRE: Se eliminó el último segmento por condición de cierre.")
+            log("   >> CADENA ACTUALIZADA: " .. new_chain_str)
+        end
+        
         for idx, seg in ipairs(current_pattern_params) do 
             log(string.format("   Seg %d: (Ang %.2f, Dist %.2f)", idx, seg[2], seg[1])) 
         end
@@ -445,7 +599,7 @@ function GlobalReconstructor.run(robot_id, stored_data, cfg)
             log(string.format(" [%d] %s", i, fmt_struct(v))) 
         end
     end
-        
+       
     local raw_pool = {}
     for i, v in ipairs(stored_data) do 
         table.insert(raw_pool, { 
@@ -469,32 +623,105 @@ function GlobalReconstructor.run(robot_id, stored_data, cfg)
     local limite_ruido = calcular_limite_ruido(freq_array)
     
     local clean_pool = {}
+    local discarded_fragments = {} -- Lista para agrupar los eliminados
+    
     for _, struct in ipairs(raw_pool) do
         local fragment_ngrams, _ = extract_ngrams_from_fragment(struct, cfg)
         local is_noisy = false
         local failed_ngram_count = 0
-        
+        local failed_ngram_d = 0
+        local failed_ngram_a = 0
+        local ngrams_info = {} -- Para guardar la información de todos los pares
+       
         for _, ngr in ipairs(fragment_ngrams) do
+            local current_count = 0
             for _, db_ngr in ipairs(ngram_db) do
                 if (math.abs(db_ngr.d - ngr.d) <= cfg.CONFIG.TOL_DIST and math.abs(db_ngr.a - ngr.a) <= cfg.CONFIG.TOL_ANG) then
-                    if db_ngr.count < limite_ruido then 
-                        is_noisy = true 
-                        failed_ngram_count = db_ngr.count
-                    end
+                    current_count = db_ngr.count
                     break
                 end
             end
-            if is_noisy then break end
+           
+            -- Guardamos la frecuencia de cada par encontrado
+            table.insert(ngrams_info, {d = ngr.d, a = ngr.a, count = current_count})
+
+            if current_count < limite_ruido and not is_noisy then 
+                is_noisy = true 
+                failed_ngram_count = current_count
+                failed_ngram_d = ngr.d
+                failed_ngram_a = ngr.a
+                -- No hacemos 'break' aquí para poder registrar las frecuencias de los demás pares del fragmento
+            end
         end
-        
+       
         if not is_noisy then 
             table.insert(clean_pool, struct) 
         else
-            if LOG_TERMOSTATO then
-                log(string.format(" [FILTRO RUIDO] Descartado por umbral (Tenía %d repeticiones, mínimo era %.2f): %s", failed_ngram_count, limite_ruido, fmt_struct(struct)))
-            end
+            -- Guardamos el fragmento eliminado para imprimirlo luego con el formato exacto y detalles de sus pares
+            table.insert(discarded_fragments, {
+                id = struct.id,
+                str = fmt_struct(struct),
+                failed_count = failed_ngram_count,
+                failed_d = failed_ngram_d,
+                failed_a = failed_ngram_a,
+                min = limite_ruido,
+                ngrams = ngrams_info
+            })
         end
     end
+
+    -- Impresión del bloque de FILTRO RUIDO
+    if LOG_TERMOSTATO then
+        log("\n=========================================")
+        log(" [FILTRO RUIDO]")
+       
+        if #discarded_fragments > 0 then
+            for _, info in ipairs(discarded_fragments) do
+                log("")
+                log(string.format(" Fragmento %s -> %s", info.id, info.str))
+                log("   Frecuencia de sus pares (N-Gramas):")
+                for _, ngr_info in ipairs(info.ngrams) do
+                    log(string.format("     - (Ang: %.2f, Dist: %.2f) -> Frecuencia: %d", ngr_info.a, ngr_info.d, ngr_info.count))
+                end
+                log(string.format("   >> DESCARTADO: Debido a que el par (Ang: %.2f, Dist: %.2f) tenía %d repeticiones (frecuencia mínima debió ser %.2f).", 
+                    info.failed_a, info.failed_d, info.failed_count, info.min))
+            end
+        else
+            log("\n >> Ningún fragmento fue eliminado. Todos los pares superaron el umbral de ruido mínimo (" .. string.format("%.2f", limite_ruido) .. ").")
+        end
+        log("=========================================")
+    end
+    
+    -- =========================================================================
+    -- PASO NUEVO: REDUCCIÓN DE FRAGMENTOS (PRE-PROCESAMIENTO)
+    -- =========================================================================
+    local group_logs = {}
+    clean_pool, group_logs = reduce_fragments_pool(clean_pool, cfg)
+    
+    if LOG_TERMOSTATO then
+        log("\n=========================================")
+        log(" [REDUCCIÓN DE FRAGMENTOS (PRE-PROCESAMIENTO)]")
+        if #group_logs > 0 then
+            for num, g_log in ipairs(group_logs) do
+                local ids_str = table.concat(g_log.ids, ", ")
+                log(string.format(" promedio %d = fragmentos: %s = %s", num, ids_str, g_log.result_str))
+            end
+        else
+            log(" >> No se encontraron sub-cadenas para reducir. Todos los fragmentos son únicos.")
+        end
+        
+        log("\n=========================================")
+        log(" [POOL FINAL POST-REDUCCIÓN Y FILTRO]")
+        if #clean_pool > 0 then
+            for i, v in ipairs(clean_pool) do 
+                log(string.format(" [%d] %s", i, fmt_struct(v))) 
+            end
+        else
+            log(" >> El pool quedó vacío.")
+        end
+        log("=========================================\n")
+    end
+    -- =========================================================================
 
     local all_final_results = {} 
     local iteration = 1
@@ -511,16 +738,48 @@ function GlobalReconstructor.run(robot_id, stored_data, cfg)
         local explorer_hypothesis = nil
         local explorer_name = "M1"
         local explorer_pool_result = {}
-        
-        if #clean_pool <= cfg.CONFIG.MAX_ISLANDS_M2 then
-            local m2_solution = solve_smart_backtracking_all(clean_pool, cfg)
+        local m1_fallback_reason = "" -- VARIABLE NUEVA PARA GUARDAR LA RAZÓN DEL SALTO A M1
+       
+        -- =====================================================================
+        -- OPCIÓN C: BLINDAJE ADAPTATIVO
+        -- Extraemos el Índice de Orden del Termostato. Modulamos la agresividad
+        -- de M2 según el nivel de ruido (caos).
+        -- =====================================================================
+        local idx_orden = ARBITER_CONFIG.INDICE_ORDEN or 1.0
+        local dynamic_min_overlap = cfg.CONFIG.MIN_OVERLAP_M2
+        -- Protegemos por si el usuario no actualizó MAX_ISLANDS_M2 a MAX_FRAGMENTS_M2 en el archivo main:
+        local dynamic_max_fragments = cfg.CONFIG.MAX_ISLANDS_M2 or 9
+       
+        if idx_orden <= 0.4 then
+            -- Caos alto: Se exigen al menos 3 coincidencias para ramificar; máx 5 fragmentos
+            dynamic_min_overlap = math.max(dynamic_min_overlap, 3)
+            dynamic_max_fragments = math.min(dynamic_max_fragments, 5)
+        elseif idx_orden <= 0.8 then
+            -- Caos moderado: Se exigen al menos 2 coincidencias; máx 7 fragmentos
+            dynamic_min_overlap = math.max(dynamic_min_overlap, 2)
+            dynamic_max_fragments = math.min(dynamic_max_fragments, 7)
+        end
+       
+        if LOG_RECURSION_DEBUG then
+            print(string.format("\n[DEBUG ADAPTATIVO] Indice de Orden: %.2f | M2 ajustado a Solape >= %d, Límite Fragmentos <= %d", idx_orden, dynamic_min_overlap, dynamic_max_fragments))
+        end
+
+        -- LÓGICA DE SELECCIÓN DE MÉTODO (M2 vs M1)
+        if #clean_pool <= dynamic_max_fragments then
+            local m2_solution = solve_smart_backtracking_all(clean_pool, cfg, dynamic_min_overlap)
+           
+            -- Si M2 devuelve un pool válido (y NO fue abortado)
             if m2_solution and #m2_solution.pool_result > 0 then
                 explorer_pool_result = m2_solution.pool_result
                 explorer_name = "M2"
             else
+                -- Si M2 devolvió nil, el cortocircuito lo detuvo. Guardamos el motivo:
+                m1_fallback_reason = string.format(" [Forzado a M1: M2 abortó al superar %d llamadas recursivas]", cfg.CONFIG.MAX_RECURSIONS_M2 or 5000)
                 explorer_pool_result = solve_greedy(clean_pool, cfg)
             end
         else
+            -- Si hay demasiados fragmentos, guardamos el motivo:
+            m1_fallback_reason = string.format(" [Forzado a M1: %d fragmentos superan el límite dinámico de %d fragmentos]", #clean_pool, dynamic_max_fragments)
             explorer_pool_result = solve_greedy(clean_pool, cfg)
         end
 
@@ -538,7 +797,7 @@ function GlobalReconstructor.run(robot_id, stored_data, cfg)
         if m3_score > explorer_score and m3_score >= ARBITER_CONFIG.MIN_SCORE then
             winner_struct = m3_hypothesis
             ids_to_remove = m3_covered_ids
-            
+           
             if LOG_ARBITRO == 2 then
                 log(string.format("\n [ÁRBITRO DETALLE] Evaluación de la Iteración %d", iteration))
                 log(string.format("   - Puntaje M3 (Regular): %.4f", m3_score))
@@ -549,15 +808,15 @@ function GlobalReconstructor.run(robot_id, stored_data, cfg)
                     log(string.format("   - Camino propuesto %s: %s", explorer_name, fmt_struct(explorer_hypothesis)))
                 end
             end
-            
+           
             if LOG_ARBITRO >= 1 then
                 log(string.format("\n [ÁRBITRO] >>> ¡Gana M3 (Geometría Regular)! -> %s", fmt_struct(winner_struct)))
             end
-            
+           
         elseif explorer_score >= m3_score and explorer_score >= ARBITER_CONFIG.MIN_SCORE then
             winner_struct = explorer_hypothesis
             ids_to_remove = explorer_hypothesis.consumed_ids
-            
+           
             if LOG_ARBITRO == 2 then
                 log(string.format("\n [ÁRBITRO DETALLE] Evaluación de la Iteración %d", iteration))
                 log(string.format("   - Puntaje M3 (Regular): %.4f", m3_score))
@@ -568,9 +827,11 @@ function GlobalReconstructor.run(robot_id, stored_data, cfg)
                 end
                 log(string.format("   - Camino propuesto %s: %s", explorer_name, fmt_struct(explorer_hypothesis)))
             end
-            
+           
             if LOG_ARBITRO >= 1 then
-                log(string.format("\n [ÁRBITRO] >>> ¡Gana %s (Ruta Irregular)! -> %s", explorer_name, fmt_struct(winner_struct)))
+                -- AQUÍ SE IMPRIME LA RAZÓN SI SALTAMOS A M1
+                local reason_str = (explorer_name == "M1") and m1_fallback_reason or ""
+                log(string.format("\n [ÁRBITRO] >>> ¡Gana %s (Ruta Irregular)%s! -> %s", explorer_name, reason_str, fmt_struct(winner_struct)))
             end
         else
             if LOG_ARBITRO == 2 then

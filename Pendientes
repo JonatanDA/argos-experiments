@@ -1,0 +1,20 @@
+1. Revisar segmentación -> uso de subsampling
+	- ¿ Por qué a menor velocidad menor Qi? 
+		- Revisar: Distance_threshold actualmente dependiente de velocidad del maestro y aprendiz -> ? -> Mejorar: valor constante de variable ✅
+		
+2- Revisa métricas de evaluación ✅
+
+3. Nuevo modo de Active learning
+	- Peso a nueva información
+
+4. Configurar experimento planteado en sesión 17/09
+
+5. Corregir rango de visión
+	- Solución desde Lua -> Saturación
+	- Solución directamente desde C++
+
+6. Migrar Lua -> python - ros
+	- Usar data set artificial con las funciones de procesamiento en python
+	- Usar data set real	    con las funciones de procesamiento en python
+
+ 

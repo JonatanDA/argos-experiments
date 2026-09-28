@@ -27,7 +27,7 @@ import matplotlib.pyplot as plt
 # ---------- CONFIGURACIÓN DE VISUALIZACIÓN E INTERFAZ ----------
 # =============================================================================
 # --- Ventanas de Comparación ---
-SHOW_COMPARISON_WINDOWS = True                             # True: Abre pop-ups evaluando la calidad de imitación
+SHOW_COMPARISON_WINDOWS = False                             # True: Abre pop-ups evaluando la calidad de imitación
 MAX_WINDOWS             = 5                                 # Límite de ventanas abiertas simultáneamente
 
 # --- Ventana de Diccionario Original ---
@@ -46,7 +46,7 @@ IMAGE_DIR               = "Resultados/Robots/Qupa/Tr7/Pentagono/Calidad_Imitacio
 # ---------- CONFIGURACIÓN DEL TRACKER Y SISTEMA ----------
 # =============================================================================
 END_PATTERN             = "End_simulation"                  # Frase clave para dejar de escuchar el tracker
-AUTO_CLOSE_WINDOWS      = False                             # True: Cierra las gráficas automáticamente al terminar
+AUTO_CLOSE_WINDOWS      = True                             # True: Cierra las gráficas automáticamente al terminar
 AUTO_CLOSE_TIME         = 3.0                               # (Aplica si AUTO_CLOSE_WINDOWS=True) Segundos de espera antes de cerrar
 
 # =============================================================================

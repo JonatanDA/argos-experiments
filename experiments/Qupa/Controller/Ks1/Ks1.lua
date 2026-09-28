@@ -1,7 +1,5 @@
 --=============================================
---   MEJORAS :  -- Mejoras en la función move. Corrección cuando stop = true
-                -- Mejoras en los estados de active learning, corrección de desfases de posición entre estados.
-                -- Mejoras en el loggeo de global reconstruct
+--   MEJORAS :  -- Active learning con centroide + pid
 --=============================================
 -------------------------------------------------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------------------------------------------------
@@ -24,107 +22,178 @@
 math.randomseed(os.time())
 
 ticks_per_second                    = 10                        -- Número de ticks que representa un segundo en la simulación (ajusta según la configuración de .argos)
-max_time                            = 500 * ticks_per_second    -- Duración máxima de la simulación en ticks
+max_time                            = 5000 * ticks_per_second   -- Duración máxima de la simulación en ticks
 Distribucion_sensores_de_proximidad = {0,-45,45,-90, 90,180}    -- Ángulos de los sensores de proximidad a considerar para la detección de obstáculos (en grados) --> {} o "uniformes"
 --Distribucion_sensores_de_proximidad = "uniform"               -- Ángulos de los sensores de proximidad a considerar para la detección de obstáculos (en grados) --> {} o "uniformes"
 Num_cantidad_leds                   = 2
-
+FOOTBOT_INTERWHEEL_DISTANCE         = 14                        -- Distancia entre ruedas del Qupa (en metros)
 -- Importamos 
 math_helper = require("Functions.math_helper")
+
 ------------------------------
 --Parámetro de simulación internos
-ENABLE_ACTIVE_LEARNING = true --Toggle global para activar/desactivar el seguimiento dinámico
 
-speed_dem = 27                  -- Velocidad del master al ejecutar el patrón
-d_speed   = 30                  -- velocidad normal
-g_speed   = 50                  -- Velocidad de giro
+factor_vel  = 1                   -- Factor para ajustar la velocidad del master al ejecutar el patrón
+speed_dem   = 10*factor_vel       -- 
+speed_dem_g = (speed_dem/2)       -- 
 
--- Métricas de paciencia
-MAX_PATIENCE        = 600       -- Tiempo máximo de espera sin recibir datos útiles
-BASE_RESTORE        = 200       -- Paciencia base a restaurar con datos refinados/actualizados
+d_speed     = 30                  -- velocidad en linea recta del apprentice
+g_speed     = 70                  -- Velocidad de giro deñ apprentice
 
--- 
-back_threshold        = 25      -- Distancia que retrocede el apprentice para evitar colisión. cm.
-front_threshold       = 25      -- Limite de distancia minima entre un objeto detectado y el apprentice para entrar a evadirlo
-max_tracking_distance = 25      -- Máxima distancia a la que se puede alejar el centroide antes de que el apprentice se acerque para no perder de vista. cm
-porcentaje            = 0.75     -- 1 < porcentaje < 0.33 , indica que tanto el apprentice busca acercarse al maestro cuando este cruza el max_tracking_distance.
+------------------------------
+-- Modelos
 
---
-distance_treshold   = 3*(speed_dem+d_speed)/ticks_per_second    -- Sensibilidad del apprentice a caambios en los puntos obtenidos del maestro durante la etapa de observación.
+-- Métricas del modelo de absevación
+distance_treshold       = 600/ticks_per_second         -- Sensibilidad del apprentice a caambios en los puntos obtenidos del maestro durante la etapa de observación.
 
---
-seg_cfg = {
-    distance_treshold       = distance_treshold, -- Función de pint cloud segmentation
-}
+-- Métricas del modelo de paciencia
+MAX_PATIENCE            = 160 * ticks_per_second       -- Tiempo máximo de espera sin recibir datos útiles en segundos
+BASE_RESTORE            = 20  * ticks_per_second       -- Paciencia base a restaurar con datos refinados/actualizados en segundos
 
+-- Métricas del modelo de ActiveLearning
+back_threshold          = 25      -- Distancia que retrocede el apprentice para evitar colisión. cm.
+front_threshold         = 25      -- Limite de distancia minima entre un objeto detectado y el apprentice para entrar a evadirlo
+max_tracking_distance   = 25      -- Máxima distancia a la que se puede alejar el centroide antes de que el apprentice se acerque para no perder de vista. cm
+porcentaje              = 0.75    -- 1 < porcentaje < 0.33 , indica que tanto el apprentice busca acercarse al maestro cuando este cruza el max_tracking_distance.
 
--- 
-CONFIG = {
-    TOL_DIST                = 2*(speed_dem+d_speed)/ticks_per_second ,    
-                                                    -- (cm) -- Distancia minima de cierre del poligono.
-    TOL_ANG                 = 15,                   -- (°)
-    MIN_OVERLAP_M1          = 1,                    -- Solape mínimo independiente para Greedy (M1)
-    MIN_OVERLAP_M2          = 1,                    -- Solape mínimo independiente para Exhaustivo (M2)
-    PRINT_RECURSIVE_PATHS   = true,                 -- Imprime los pasos de M2
-    FORCE_M2_ALWAYS         = false,                -- Ejecutar M2 incluso si M1 fue perfecto
-    MAX_ISLANDS_M2          = 9,                    -- Límite de islas para M2
-    
-    selection_mode          = 3,                    -- 1=Frecuente, 2=Larga, 3=Función de Ponderación (Score)
-    
-    W_FREQ                  = 1,                    -- Peso de la frecuencia
-    W_LEN                   = -1,                   -- Positivo: Favorece Cortas. Negativo: Favorece Largas. 0: Ignorar.
-    W_OV_QUAL               = 2,                    -- Peso de la calidad de solapes
+------------------------------
+-- Módulos
 
-    MATH_TOLERANCE          = 0.5,                  -- Tolerancia matemática M3
-    
-    
-    -- 1. FILTRADO DE RUIDO (Tolerancia a la basura del sensor)
-    RUIDO_BASE              = 0.2,  -- (20%) Piso mínimo absoluto. Limpia los errores inevitables de cuantización del sensor, incluso en enjambres perfectos.
-    RUIDO_PENALIZACION_MAX  = 0.15, -- (+15%) Tope extra que se suma al ruido base en escenarios de caos total. Evita procesar colisiones masivas como datos válidos.
-
-    -- 2. EL GEÓMETRA M3 (Ventaja para polígonos regulares)
-    BONO_M3_BASE            = 1.0,  -- (x1.0) Multiplicador neutral. Las figuras geométricas compiten de igual a igual con las rutas irregulares por defecto.
-    BONO_M3_MAX_EXTRA       = 0.5,  -- (+0.5) Premio máximo. Si el Termostato lee mucha simetría pura en la arena, los polígonos ganan hasta un 50% de ventaja para asegurar su victoria por la "Navaja de Ockham".
-    
-    -- 3. ESCEPTICISMO DEL ÁRBITRO (Score mínimo para validación)
-    SCORE_MIN_BASE          = 0.25, -- (%) Cobertura mínima absoluta requerida. Todo patrón debe explicar al menos al 5% del volumen del enjambre para no ser descartado.
-    SCORE_PENALIZACION_MAX  = 0.10, -- (+%) Blindaje estadístico. En escenarios altamente fragmentados, se sube la exigencia hasta un 15% total para evitar aceptar cadenas formadas por mera casualidad (alucinaciones).
-    
-    -- 4. CASTIGO ESTRUCTURAL
-    PESO_COMPLEJIDAD        = 0.25  -- Constante de penalización para trayectorias largas. Evita que las rutas irregulares inmensas y complejas (M2) le ganen injustamente a las geometrías cortas y elegantes (M3) solo por abarcar más volumen bruto de datos.
-}
-
--- CONFIGURACIÓN DEL MODELO DE RUIDO (SENSOR NOISE CONFIG)
+-- Métricas del módulo de ruido en camara de blobs del aprendiz: noise_manager.lua
 noise_cfg = {
-    ENABLE_NOISE            = false ,    -- Si es false, el robot ve perfecto (Ground Truth)
+    ENABLE_NOISE            = true  ,    -- Si es false, el robot ve perfecto (Ground Truth)
     USE_DISTANCE_DEPENDENT  = true  ,    -- El ruido aumenta si el objeto está lejos
     USE_OUTLIERS            = false ,    -- Activar lecturas "fantasma" o fallos graves
     USE_BIAS                = true  ,    -- Error sistemático (ej. sensor mal calibrado +2cm siempre)
     -- 
-    NOISE_BASE_RADIUS       = 0.1000,    -- Ruido constante base (ej. 1 cm de error mínimo)
+    NOISE_BASE_RADIUS       = 0.000 ,    -- Ruido constante base (ej. 1 cm de error mínimo)
     NOISE_SIGMAS            = 2.0   ,    -- 2 sigmas = 95% de probabilidad de caer dentro del 'Radio Actual'
-    NOISE_FACTOR            = 0.05  ,    -- Crece un 5% respecto a la distancia (ej. a 100cm, suma 5cm extra al radio)
+    NOISE_FACTOR            = 0.1  ,    -- Crece un 5% respecto a la distancia (ej. a 100cm, suma 5cm extra al radio si es 0.05)
     OUTLIER_PROB            = 0.01  ,    -- % de probabilidad de fallo catastrófico
-    BIAS_OFFSET             = 1.5   ,    -- Cm extra que agrega el sensor por defecto (si USE_BIAS es true)
+    BIAS_OFFSET             = 0.0   ,    -- Cm extra que agrega el sensor por defecto (si USE_BIAS es true)
 }
 
---Parametros de patrónes predefinidos
-bigger = 1  -- Factor de escala para ajustar el tamaño de las figuras predefinidas (ajusta según tu espacio de simulación)
+-- Métricas del módulo: Point_Cloud_Segmenter.lua y Segmenter_Parameterizer.lua 
+seg_cfg = {
+    distance_treshold       = 15,                  -- Menor que la longitud de lado más pequeña del/los comportamiento a aprender (cm)
+    limite_maximo_ventana   = (30)/factor_vel,     --
+    tamano_subsampling      = 15,                  -- 
+    use_subsampling         = false,               --
+}
+
+-- Métricas del módulo de reconstrucción de comportamientos de movimiento: Global_Trajectory_Reconstructor.lua y Parameter_Storage.lua
+-- Esta tabla centraliza los hiperparámetros de tolerancia geométrica, pesos de evaluación, filtrado de ruido y protecciones de rendimiento en tiempo real para el sistema de reconstrucción.
+CONFIG = {
+    -- ------------------------------------------------------------------------
+    -- 1. TOLERANCIAS GEOMÉTRICAS Y SOLAPES
+    
+    -- Margen de error permitido en distancia (en centímetros).
+    -- Implicación: Define cuán estrictos somos para considerar que dos distancias detectadas corresponden al mismo segmento. 
+    -- Si es muy bajo, el ruido real romperá los datos verdaderos; si es muy alto, unirá cosas dispares.
+    TOL_DIST = 15,
+    
+    -- Margen de error permitido en ángulos (en grados).
+    -- Implicación: Tolerancia angular aceptada para determinar si dos rectas, tramos son colineales.
+    TOL_ANG = 15,
+    
+    -- Solape mínimo independiente para el método rápido (Greedy / M1).
+    -- Implicación: Número mínimo de puntos consecutivos que deben coincidir obligatoriamente para que el algoritmo voraz una dos fragmentos.
+    MIN_OVERLAP_M1 = 1,
+    
+    -- Solape mínimo base para el método exhaustivo (Backtracking / M2).
+    -- Implicación: Cuántos segmentoos mínimos deben coincidir en condiciones normales para que M2 cree una rama de combinación. (Nota: El sistema ajusta este valor de forma dinámica si detecta un entorno caótico con mucho ruido).
+    MIN_OVERLAP_M2 = 1,
+
+    -- ------------------------------------------------------------------------
+    -- 2. SEGURIDAD Y RENDIMIENTO (PROTECCIÓN CONTRA CONGELAMIENTOS)
+    
+    -- Límite máximo de llamadas recursivas permitidas en M2.
+    -- Concepto clave: Una "llamada recursiva" ocurre cuando el algoritmo se llama a sí mismo para explorar múltiples caminos y combinaciones de piezas (como un laberinto). 
+    -- Cuando se introduce ruido, miles de piezas parecen encajar parcialmente, creando una "explosión combinatoria" de muchas opciones que saturan la CPU y congelan el PC.
+    -- Implicación: Si la búsqueda exhaustiva supera este límite de 5000 llamadas, 
+    -- el seguro se activa instantáneamente, aborta M2 y transfiere el control al método rápido M1 para garantizar la fluidez en tiempo real de la simulación.
+    MAX_RECURSIONS_M2 = 5000,
+    
+    -- Interruptor booleano (true/false) para imprimir o silenciar en consola los pasos detallados que va tomando el método M2 durante la depuración.
+    PRINT_RECURSIVE_PATHS = true,
+    
+    -- Interruptor para forzar la ejecución de M2 incluso cuando el método rápido (M1) ya había encontrado una solución perfecta.
+    FORCE_M2_ALWAYS = false,
+    
+    -- Límite máximo de fragmentos independientes que M2 está autorizado a procesar mediante búsqueda exhaustiva.
+    -- Implicación: Si el número de fragmentos supera este valor, el sistema omite M2 automáticamente y recurre a M1 para evitar saturar el procesador.
+    MAX_FRAGMENTS_M2 = 9,
+
+    -- ------------------------------------------------------------------------
+    -- 3. PONDERACIÓN Y SELECCIÓN DE PATRONES
+    
+    -- Criterio matemático para la selección de rutas finales:
+    -- 1 = Prioriza frecuencia, 2 = Prioriza trayectorias largas, 3 = Función de Ponderación Global basada en Score.
+    selection_mode = 3,
+    
+    -- Peso de la frecuencia.
+    -- Implicación: Qué tanto premia el árbitro a los patrones que se repiten consistentemente en las soluciones de m2
+    W_FREQ = 1,
+    
+    -- Peso de la longitud de la trayectoria.
+    -- Implicación: Valores positivos favorecen rutas cortas; negativos favorecen rutas largas; 0 ignora por completo la longitud en la decisión.
+    W_LEN = 0,
+    
+    -- Peso de la calidad de los solapes.
+    -- Implicación: Premia aquellas soluciones donde los fragmentos encajaban de forma limpia, robusta y con alta superposición.
+    W_OV_QUAL = 2,
+
+    -- Tolerancia matemática interna utilizada en las comprobaciones geométricas del Geómetra (M3).
+    MATH_TOLERANCE = 0.5,
+
+    -- ------------------------------------------------------------------------
+    -- 4. FILTRADO DE RUIDO (TOLERANCIA A LA BASURA DEL SENSOR)
+    
+    -- Piso mínimo absoluto de filtrado (0.2 equivalentes al 20%).
+    -- Implicación: Porcentaje mínimo de repetición obligatorio para que un dato no sea descartado como ruido o basura del sensor, incluso en simulaciones ideales.
+    RUIDO_BASE = 0.2,
+    
+    -- Margen de ajuste adicional para el ruido (0.15 equivalentes al +15%).
+    -- Implicación: Define cuán agresivamente se endurece el filtro de ruido cuando el termostato interno detecta un entorno de alto caos o dispersión.
+    RUIDO_PENALIZACION_MAX = 0.15,
+
+    -- ------------------------------------------------------------------------
+    -- 5. EL GEÓMETRA M3 Y EL ÁRBITRO (LÓGICA DE DECISIÓN)
+    
+    -- Multiplicador base neutral para las geometrías regulares (polígonos cerrados).
+    BONO_M3_BASE = 1.0,
+    
+    -- Premio máximo adicional en la puntuación si el termostato detecta que el enjambre está formando figuras simétricas perfectas
+    BONO_M3_MAX_EXTRA = 0.5,
+    
+    -- Cobertura mínima absoluta requerida para que el árbitro acepte un patrón (0.25 equivalentes al 25% del volumen total de datos del enjambre).
+    SCORE_MIN_BASE = 0.25,
+    
+    -- Blindaje estadístico dinámico. Eleva la exigencia de puntuación en escenarios muy fragmentados para evitar que el sistema "alucine" patrones por mera casualidad.
+    SCORE_PENALIZACION_MAX = 0.10,
+    
+    -- Constante de penalización estructural aplicada a trayectorias demasiado largas.
+    -- Implicación: Aplica un principio de parsimonia (Navaja de Ockham), evitando que una ruta irregular gigantesca (M2) supere injustamente a una geometría corta (M3) solo por abarcar mayor volumen bruto de datos.
+    PESO_COMPLEJIDAD = 0.05
+}
+
+------------------------------
+-- Parámetros de patrónes predefinidos a ejecutar por los master
+distance_factor = 1  -- Factor de escala para ajustar el tamaño de las figuras predefinidas (ajusta según tu espacio de simulación)
 
 if robot.id == "Qupa4" then
 
 elseif robot.id == "Qupa1" or robot.id == "Qupa2" or robot.id == "Qupa3" or robot.id == "Qupa5" then
     figura = "Pentágono_irregular" -- "triangulo_regular" -- "octagono" -- "triangulo_irregular_1" --"Pentágono_irregular"  -- "Heptágono"-- "" -- "trayectoria_1" 
-    bigger = 1
+    distance_factor = 1
 else
-    figura = "triangulo_regular" -- "triangulo_regular" -- "octagono" -- "triangulo_irregular_1" --"Pentágono_irregular"  -- "Heptágono"-- "" -- "trayectoria_1" 
-    bigger = 1  -- Factor de escala para ajustar el tamaño de las figuras predefinidas (ajusta según tu espacio de simulación)
+    figura = "Pentágono_irregular" -- "triangulo_regular" -- "octagono" -- "triangulo_irregular_1" --"Pentágono_irregular"  -- "Heptágono"-- "" -- "trayectoria_1" 
+    distance_factor = 1 
 end
 
+------------------------------
 -- Banderas de loggeo
-
--- Loggeo de la información obtenida por el apprentice durante la etapa de Observación
-SRP_LOG_MODE        = 0 -- 0: Sin logs, 1: Parámetros obtenidos tras finalizar la observación de un maestro. 2. Paso a paso de la actualización de maestros, 3: Imprime todo.
+SRP_LOG_MODE        = 1 -- 0: Sin logs, 1: Parámetros obtenidos tras finalizar la observación de un maestro. 2. Paso a paso de la actualización de maestros, 3: Imprime todo.
 UP_LOG_MODE         = 1 -- 0: Sin logs, 1: Información sobre la paciencia (Tiempo que el apprentice actualiza para continuar o deter su aprendizaje) 
 AL_LOG_MODE         = 0 -- 0: Sin logs, 1: Información sobre el Active Learning, 2: Información detallada del Active Learning, 3: Estados del active learning
 -------------------------------------------------------------------------------------------------------------------------------------
@@ -140,32 +209,69 @@ AL_LOG_MODE         = 0 -- 0: Sin logs, 1: Información sobre el Active Learning
     -- Estas funciones se mantienen comentadas por defecto. Si se requieren se llaman en arun_sim.py y este las descomenta para que se ejecuten automaticamente.
 -------------------------------------------------------------------------------------------------------------------------------------
 
---displayed_data  = 3 --1 Datos obtenidos por el apprentice. 2. Datos globales del movimiento del master, 3: Ambos
--- function Print_tracker_trayectory_data(k, x, y,logging)
+-- function Print_tracker_paciencia(current_patience_seg)
 
---     if type(k) == "number" then
+--     print("[PACIENCIA](" .. current_patience_seg.. ") segundos.") 
+-- end
 
---         if displayed_data == 1 or displayed_data == 3 then
+-- function Print_tracker_trayectory_data(p1, p2, p3, p4, p5, p6, p7, p8)
+--     -- Retrocompatibilidad: Si el primer parámetro no es "trajectory" ni "Active_learning"
+--     if type(p1) ~= "string" or (p1 ~= "trajectory" and p1 ~= "Active_learning") then
+--         local k, x, y, logging = p1, p2, p3, p4
+--         if type(k) == "number" then
 --             print("Master" .. k .. " & " .. x .. " , " .. y)
---             if logging then 
---                 log("Master" .. k .. " & " .. x .. " , " .. y)
---             end
-
---         end
-
---     elseif type(k) == "string" then
---         -- Obtener el vector de posición inicial
---         local x = robot.positioning.position.x
---         local y = robot.positioning.position.y
-
---         if displayed_data == 2 or displayed_data == 3 then
+--             if logging then log("Master" .. k .. " & " .. x .. " , " .. y) end
+--         elseif type(k) == "string" then
+--             local rx = robot.positioning.position.x
+--             local ry = robot.positioning.position.y
 --             if k == "Qupa4" then
---                 print("Apprentice & " .. x .. " , " .. y)  -- Imprime los datos globales del movimiento del Observador
+--                 print("Apprentice & " .. rx .. " , " .. ry)
 --             elseif k == "App" then
---                 print("Ra".. " & " .. x .. " , " .. y)  
+--                 print("Patrón".. (master_indice or "") .." & " .. rx .. " , " .. ry)
+--             else
+--                 print(k .. " & " .. rx .. " , " .. ry)
 --             end
 --         end
+--         return
 --     end
+
+--     -- [NUEVO FORMATO] Usamos PUNTO Y COMA (;) para evitar choques con decimales
+--     if p1 == "trajectory" then
+--         local k, x, y, logging = p2, p3, p4, p5
+--         if type(k) == "number" then
+--             print("[trajectory];Master" .. k .. ";" .. x .. ";" .. y)
+--             if logging then log("[trajectory];Master" .. k .. ";" .. x .. ";" .. y) end
+--         elseif type(k) == "string" then
+--             local rx = robot.positioning.position.x
+--             local ry = robot.positioning.position.y
+--             if k == "Qupa4" then
+--                 print("[trajectory];Apprentice;" .. rx .. ";" .. ry)
+--             elseif k == "App" then
+--                 print("[trajectory];Patrón".. (master_indice or "") ..";" .. rx .. ";" .. ry)
+--             else
+--                 print("[trajectory];" .. k .. ";" .. rx .. ";" .. ry)
+--             end
+--         end
+        
+--     -- [NUEVO FORMATO] Datos enriquecidos de Active Learning
+--     elseif p1 == "Active_learning" then
+--         local al_mode, name, x, y, extra1, extra2, extra3 = p2, p3, p4, p5, p6, p7, p8
+--         -- El aprendiz usa siempre su posición global real para anclar los vectores
+--         if type(name) == "string" and name == "Qupa4" then
+--             x = robot.positioning.position.x
+--             y = robot.positioning.position.y
+--             name = "Apprentice"
+--         end
+--         local out = "[active_learning];" .. al_mode .. ";" .. name .. ";" .. x .. ";" .. y
+--         if extra1 ~= nil then out = out .. ";" .. extra1 end
+--         if extra2 ~= nil then out = out .. ";" .. extra2 end
+--         if extra3 ~= nil then out = out .. ";" .. extra3 end
+--         print(out)
+--     end
+-- end
+
+-- function Print_tracker_AL_PID(target, actual, output)
+--     print(string.format("[PID];%.4f;%.4f;%.4f", target, actual, output))
 -- end
 
 -- function Print_tracker_calidad_imitacion_data(linea_resumen, is_master)
@@ -236,9 +342,8 @@ AL_LOG_MODE         = 0 -- 0: Sin logs, 1: Información sobre el Active Learning
 -- end
 
 -- function evaluator_ruido (raw_angle, raw_dist, noisy_angle, noisy_dist)
---     log("timer = "..timer)
---     log("Blob detectado: angulo = " .. raw_angle .. ", distancia = " .. raw_dist)
---     log("Blob ruidoso detectado: angulo = " .. noisy_angle .. ", distancia = " .. noisy_dist)
+--     print("[EVALUATOR_RUIDO]Blob perfecto: angulo = " .. raw_angle .. ", distancia = " .. raw_dist)
+--     print("[EVALUATOR_RUIDO]Blob ruidoso : angulo = " .. noisy_angle .. ", distancia = " .. noisy_dist)
 -- end
 
 -------------------------------------------------------------------------------------------------------------------------------------
@@ -250,8 +355,15 @@ function init()
     robot.colored_blob_omnidirectional_camera.enable()
     determinar_rol()
     if Print_tracker_calidad_imitacion_data then Print_tracker_calidad_imitacion_data(robot.id, is_master) end
+    if Print_tracker_paciencia and robot.id == "Qupa4" then 
+        print("[PACIENCIA]("..(MAX_PATIENCE/ticks_per_second)..")&" .. ticks_per_second)
+    end
+    if Print_tracker_varianza and robot.id == "Qupa4" then
+        if seg_cfg.use_subsampling then
+            print("[varianza](tamano_subsampling="..seg_cfg.tamano_subsampling)
+        end
+    end
 end
-
 -------------------------------------------------------------------------------------------------------------------------------------
 -- Función principal que se ejecuta en cada tick
 -------------------------------------------------------------------------------------------------------------------------------------
@@ -259,7 +371,11 @@ end
 timer = 1
 function step()
 
-    if robot.id == "Qupa4" and Print_tracker_trayectory_data then print("Timer="..timer) end
+    if robot.id == "Qupa4" and 
+        ( evaluator_ruido or Print_tracker_trayectory_data or Print_tracker_paciencia) then 
+            print("Timer="..timer) 
+    end
+
     if is_master == 1 then
         master() -- Ejecutar si es master
     else
@@ -281,10 +397,8 @@ all_params              = {}    -- Almacenará todos los patrones descubiertos
 parametros_elegidos     = {}    -- El patrón específico seleccionado para ejecutar
 
 d1                      = 2
-c5                      = 0
-master_avg_angle   = 0
-master_avg_dist    = 0
-first_time_demonstrator = true
+master_avg_dist         = 0
+master_indice           = 0
 function master()
 
 
@@ -302,17 +416,28 @@ function master()
         -- =========================================================
         -- Selección aleatoria del patrón a demostrar
         -- =========================================================
-        
+
         -- Verificamos que existan patrones guardados en la tabla
         if #all_params > 0 then
+
+            if master_indice == #all_params then
+                d1 = 4
+                return
+            end
             -- Escoge un índice aleatorio entre 1 y la cantidad de patrones guardados
             --local indice_aleatorio = robot.random.uniform_int(1, #all_params)
-            local indice_aleatorio = math.random(1, #all_params)
-            parametros_elegidos = all_params[indice_aleatorio]
+            --local indice_aleatorio = math.random(1, #all_params)
+            master_indice = master_indice + 1
+            parametros_elegidos = all_params[master_indice]
             --log(" ========= Ejecutando patrón aleatorio (1,"..#all_params..") , -> "..indice_aleatorio..", "..robot.id.." ========= ")
             --print_table(parametros_elegidos)
             
         else
+            if robot.id == "Qupa4" then
+                log("No se detectaron patrones en la etapa de observación, "..robot.id)
+                d1 = 4
+                return
+            end
             -- Respaldo de seguridad por si la tabla aún está vacía
             parametros_elegidos = original_params()
             parametros_elegidos = parametros_elegidos.params
@@ -325,6 +450,15 @@ function master()
 
     elseif d1 == 3 then
         Ejecutar_comportamiento(parametros_elegidos)
+
+        if PI_end then
+            resetDEM()
+            d1 = 2
+        end
+    elseif d1 == 4 then
+        robot.wheels.set_velocity(0, 0)
+        setleds("black")
+        print("End_simulation")
     end
 end
 
@@ -334,6 +468,14 @@ function apprentice()
 
     if c4 == 0 then 
         store_relative_positions()
+    elseif c4 == 1 then
+        local NAC = navegar_a_coordenadas(0,0,0.10)
+        if NAC then
+            c4 = 2
+        end 
+    elseif c4 == 2 then
+        resetOBS()
+        is_master = 1
     end
 end
 
@@ -377,13 +519,9 @@ function detectar_zona_demostracion()
     end
 end
 
-master_avg_dist_1 = 0
-EAEP_ang_ant = 0
 EAEP_c1 = 0
-EAEP_c2 = 0
-EAEP    = 0
 function espera_antes_de_ejecutar_patron()
-    if EAEP_c2 == 0 then
+    if EAEP_c1 == 0 then
         local blobs = robot.colored_blob_omnidirectional_camera
         local total_distance = 0
         local count = 0  
@@ -394,7 +532,7 @@ function espera_antes_de_ejecutar_patron()
 
         --setleds("yellow")
         if temp == false then
-            EAEP_c2 = 1
+            EAEP_c1 = 1
             --setleds("yellow")
         end
         
@@ -411,8 +549,6 @@ end
 -------------------------------------------------------------------------------------------------------------------------------------
 SMART_MASTERS = true -- true: Se detienen si hay obstáculo. false: Son ciegos.
 
-k               = 0
-c5              = 0
 indice          = 1
 PI_end          = false
 PI_counter_seg  = 0
@@ -434,13 +570,13 @@ function Ejecutar_comportamiento(params_P)
     end
     -- =========================================================================
 
-    if k == 0 then
-        if #params >= 1 then
+    if not PI_end then
+        if params and #params >= 1 then
             if indice <= #params then
                 local valor1, valor2 = params[indice][1], params[indice][2]
                 
                 -- ¡CLAVE! Siempre llamamos a move, inyectando la bandera de pausa al final
-                move(valor1, valor2, speed_dem, 10, false, robot.id, master_paused)
+                move(valor1, valor2, speed_dem, speed_dem_g, false, robot.id, master_paused)
 
                 -- Solo avanzamos la lógica del patrón si NO estamos pausados
                 if not master_paused then
@@ -456,13 +592,6 @@ function Ejecutar_comportamiento(params_P)
                             indice = indice + 1
                             PI_end = true
                             r_Temporizador_1()
-
-                            if c5 == 1 then
-                                k = 1
-                            else
-                                c5 = 1
-                                k = 1
-                            end
                         else
                             indice = indice + 1
                             c1 = 0
@@ -471,7 +600,7 @@ function Ejecutar_comportamiento(params_P)
                 end
             end
         else
-            k = 1
+            PI_end = true
             robot.leds.set_all_colors("black")
             log( " -------------------------------------------------------------------------" )
             log("Patrón no detectado :( " .. robot.id)
@@ -479,20 +608,9 @@ function Ejecutar_comportamiento(params_P)
         end
     end
 
-    if k == 1 then
+    if PI_end then
         robot.wheels.set_velocity(0, 0)   -- Detenerse
-
-        if robot.id == "Qupa4" then 
-            k = 1
-        else
-            k = 2
-            setleds("black")
-        end
-
-    elseif k == 2 then
-        resetDEM()
-        d1 = 2
-        PI_counter_seg = 0
+        setleds("black")
     end
 end
 
@@ -511,6 +629,15 @@ SegmentParameterizer            = require("Functions.Observer.Segment_Parameteri
 ParameterStorage                = require("Functions.Observer.Parameter_Storage")
 GlobalTrajectoryReconstructor   = require("Functions.Observer.Global_Trajectory_Reconstructor")
 
+-- ActiveLearning                  = require("Functions.Observer.Active_learning.Centroide_basic")
+ActiveLearning                  = require("Functions.Observer.Active_learning.Centroide_threshold")
+-- ActiveLearning                  = require("Functions.Observer.Active_learning.Centroide_PID")
+-- ActiveLearning                  = require("Functions.Observer.Active_learning.CamposVectoriales")
+-- ActiveLearning                  = require("Functions.Observer.Active_learning.Estatico")
+ENABLE_ACTIVE_LEARNING          = true
+AL_SMOOTH_TICKS                 = 4           -- Cantidad de ticks a recordar (tamaño del buffer)
+AL_SMOOTH_METHOD                = "median"    -- Puede ser "mean" (media/promedio) o "median" (mediana)
+
 -- ============================================================================
 -- [SECCIÓN 2] VARIABLES GLOBALES DE ESTADO Y MEMORIA
 -- ============================================================================
@@ -526,7 +653,7 @@ x_mark, y_mark      = 0, 0
 x_ant_r, y_ant_r    = 0, 0
 current_wait_ticks  = 0
 obs_stop_flag       = false
-MAX_WAIT_TICKS      = 5*ticks_per_second -- Ajusta este valor según la paciencia deseada frente a un obstáculo
+MAX_WAIT_TICKS      = 2*ticks_per_second -- Ajusta este valor según la paciencia deseada frente a un obstáculo
 
 al_current_state    = "IDLE"
 
@@ -550,20 +677,54 @@ end
 -- ============================================================================
 -- [SECCIÓN 3] GESTIÓN DE PACIENCIA Y RECONSTRUCCIÓN
 -- ============================================================================
-function update_patience(restore_type, count)
-    if restore_type == "full" then
-        current_patience = MAX_PATIENCE
-        if UP_LOG_MODE == 1 then 
-            log("[PACIENCIA] Restaurada completamente (" .. MAX_PATIENCE/ticks_per_second .. ") segundos.") 
-            print("[PACIENCIA] Restaurada completamente (" .. MAX_PATIENCE/ticks_per_second .. ") segundos.") 
-        end
-    elseif restore_type == "partial" then
-        local divisor = (count > 1) and (count - 1) or 1
-        local restore_amount = math.floor(BASE_RESTORE / divisor)
+
+-- Variables para el decaimiento (fatiga) de la paciencia
+local DECAY_PERCENT = 0.10 -- Pierde 10% de efectividad cada vez
+local decay_counters = {
+    [1] = 0, -- Contador de veces que se ha restaurado por Nivel 1
+    [2] = 0, -- Contador de veces que se ha restaurado por Nivel 2
+    [3] = 0  -- Contador de veces que se ha restaurado por Nivel 3
+}
+
+function update_patience(restore_level, data_count)
+    if restore_level == 0 then return end -- Nivel 0: Sin restauración
+    
+    if restore_level == 3 then
+        -- Nivel 3: Datos totalmente nuevos (Full)
+        -- El factor empieza en 1.0 (100%) y baja 0.10 (10%) por cada uso. math.max evita que sea negativo.
+        local decay_factor = math.max(0, 1.0 - (decay_counters[3] * DECAY_PERCENT))
+        local restore_amount = math.floor(MAX_PATIENCE * decay_factor)
+        
         current_patience = math.min(MAX_PATIENCE, current_patience + restore_amount)
+        decay_counters[3] = decay_counters[3] + 1 -- Aumentamos el contador para la próxima vez
+        
         if UP_LOG_MODE == 1 then 
-            log("[PACIENCIA] Restauración parcial: +" .. restore_amount/ticks_per_second .. " segundos. Actual: " .. current_patience/ticks_per_second.." segundos") 
-            print("[PACIENCIA] Restauración parcial: +" .. restore_amount/ticks_per_second .. " segundos. Actual: " .. current_patience/ticks_per_second.." segundos") 
+            log(string.format("[PACIENCIA] Restaurada (NIVEL 3). Eficacia %.0f%%. +%.2f seg. Actual: %.2f seg.", 
+                decay_factor * 100, restore_amount/ticks_per_second, current_patience/ticks_per_second))
+        end
+
+    elseif restore_level == 1 or restore_level == 2 then
+        -- Nivel 1 y 2: Restauración parcial
+        local divisor = (data_count and data_count > 1) and (data_count - 1) or 1
+        
+        -- Calculamos la pérdida por decaimiento basándonos en el contador del nivel correspondiente
+        local decay_factor = math.max(0, 1.0 - (decay_counters[restore_level] * DECAY_PERCENT))
+        local base_efectiva = BASE_RESTORE * decay_factor
+        
+        -- Aplicamos el divisor (basado en repeticiones del dato)
+        local restore_amount = math.floor(base_efectiva / divisor)
+        
+        -- El nivel 2 restaura el doble que el nivel 1
+        if restore_level == 2 then
+            restore_amount = restore_amount * 2
+        end
+        
+        current_patience = math.min(MAX_PATIENCE, current_patience + restore_amount)
+        decay_counters[restore_level] = decay_counters[restore_level] + 1 -- Aumentamos la fatiga del nivel
+        
+        if UP_LOG_MODE == 1 then 
+            log(string.format("[PACIENCIA] Rest. Parcial (NIVEL %d). Eficacia %.0f%%. +%.2f seg. Actual: %.2f seg.", 
+                restore_level, decay_factor * 100, restore_amount/ticks_per_second, current_patience/ticks_per_second)) 
         end
     end
 end
@@ -571,14 +732,15 @@ end
 function check_patience_and_reconstruct()
     if ParameterStorage.is_done() then return end
 
+    -- El contador se reduce constantemente con el paso del tiempo
     current_patience = current_patience - 1
+    if Print_tracker_paciencia then Print_tracker_paciencia(current_patience/ticks_per_second) end
 
     if current_patience <= 0 then
+
         if UP_LOG_MODE == 1 then 
             log("\n\n\n\n [PACIENCIA] AGOTADA: Ejecutando Reconstrucción...") 
-            print("[PACIENCIA] AGOTADA: Ejecutando Reconstrucción...") 
         end
-
         local datos_guardados = ParameterStorage.get_stored_data()
         local current_cfg = { CONFIG = CONFIG, LOG_MODE = SRP_LOG_MODE }   
         local exito, linea_resumen, nuevos_patrones = GlobalTrajectoryReconstructor.run(robot.id, datos_guardados, current_cfg)
@@ -589,13 +751,11 @@ function check_patience_and_reconstruct()
             for _, patron in ipairs(nuevos_patrones) do
                 table.insert(all_params, patron)
             end
-            resetOBS()
-            is_master = 1
-            c4 = 1 
         end
+
+        c4 = 1 
     end
 end
-
 -- ============================================================================
 -- [SECCIÓN 4] FUNCIONES AUXILIARES DEL OBSERVADOR (TRACKING CRUDO)
 -- ============================================================================
@@ -643,8 +803,6 @@ function process_single_observation(k, track)
         log(" ######################################################## ")
     end
 
-
-
     local clean_mov, clean_type, clean_valid, p_start, p_end = PointCloudSegmenter.process(k, track.raw_x, track.raw_y, track.raw_type, seg_cfg)
 
     track.segmentos.movement = clean_mov
@@ -654,14 +812,15 @@ function process_single_observation(k, track)
     if p_start then track.Pattern_start_detected  = true end
     if p_end   then track.End_of_pattern_detected = true end
 
-    if #track.segmentos.movement > 1 then 
+    if track.segmentos.movement and #track.segmentos.movement > 1 then 
         -- ¡AQUÍ PASAMOS track.segmentos.valid!
         track.params = SegmentParameterizer.process_segments(track.segmentos.movement, track.segmentos.valid)
         
         local current_cfg = { CONFIG = CONFIG, LOG_MODE = SRP_LOG_MODE }
-        local r_type, r_count = ParameterStorage.package_and_add(track.params, track.segmentos.valid, current_cfg)
+        local r_level, r_count = ParameterStorage.package_and_add(track.params, track.segmentos.valid, current_cfg)
         
-        if r_type then update_patience(r_type, r_count) end
+        -- Enviamos el nivel numérico
+        if r_level and r_level > 0 then update_patience(r_level, r_count) end
     else
         if SRP_LOG_MODE == 1 or  SRP_LOG_MODE == 3 then log("No hay segmentos suficientes para procesar tras la limpieza.") end
     end
@@ -674,17 +833,17 @@ function normalize_angle_rad(ang)
     while ang <= -math.pi do ang = ang + 2 * math.pi end
     return ang
 end
+
 -- ============================================================================
 -- [SECCIÓN 6] BUCLE PRINCIPAL DEL OBSERVADOR (TICK A TICK)
 -- ============================================================================
 srt_c1 = 0
 function store_relative_positions()
 
-    if Print_tracker_trayectory_data then Print_tracker_trayectory_data("Qupa4", 0, 0) end
+    if Print_tracker_trayectory_data then Print_tracker_trayectory_data("trajectory", "Qupa4", 0, 0) end
     check_patience_and_reconstruct()
 
     local proximity = proximidad()
-    --log("Proximidad: " .. string.format("%.2f", proximity[1]) .. " | Ángulo: " .. string.format("%.2f", proximity[2]))
     if proximity[1] < 1 then srt_c1 = 0 else
         if srt_c1 == 5 * ticks_per_second then resetOBS() return end
         srt_c1 = srt_c1 + 1
@@ -700,63 +859,50 @@ function store_relative_positions()
         local prox_data = proximidad() 
         obs_stop_flag = false
 
-        -- Solo consideramos un obstáculo físico si la intensidad es > 0.8
         local is_object_critical = (prox_data[1] > 0.8)
         local evadiendo_hacia_atras = (last_motion_marker[1] < 0)
 
         if is_object_critical then
             if evadiendo_hacia_atras then
-                -- Sensores traseros (cono > 135 grados)
                 if math.abs(prox_data[2]) >= 135 then obs_stop_flag = true end
             else
-                -- Sensores frontales (cono <= 45 grados)
                 if math.abs(prox_data[2]) <= 45 then obs_stop_flag = true end
             end
         end
 
         if obs_stop_flag then
             current_wait_ticks = current_wait_ticks + 1
-            
-            -- [ACCIÓN DRÁSTICA SP]: Si esperamos demasiado y el objeto no se quita
             if current_wait_ticks > MAX_WAIT_TICKS then
-                -- 1. Abortamos el movimiento actual
                 srt_ang_mark_ant = normalize_angle_rad(move_angle + srt_ang_mark_ant)
                 x_ant_r = x_mark
                 y_ant_r = y_mark
-                r_move() -- <--- LIMPIEZA TOTAL AQUÍ
+                r_move() 
                 robot.wheels.set_velocity(0, 0)
                 
-                -- 2. Lanzamos movimiento de supervivencia opuesto al objeto
                 local escape_dir = evadiendo_hacia_atras and 1 or -1
                 last_motion_marker = {escape_dir * back_threshold * porcentaje, 0}
                 current_wait_ticks = 0
                 obs_stop_flag = false
                 
-                local msg = string.format("EVADIENDO OBJETO FÍSICO | %s | Intensidad SP: %.2f", 
-                    (escape_dir > 0 and "Avanzando" or "Retrocediendo"), prox_data[1])
+                local msg = string.format("EVADIENDO OBJETO FÍSICO | %s | Intensidad SP: %.2f", (escape_dir > 0 and "Avanzando" or "Retrocediendo"), prox_data[1])
                 change_al_state("EVASION_SP", msg)
-                -- Aquí asumo que después el loop llamará a move() normalmente
             end
         else
             current_wait_ticks = 0
         end
 
-        -- Ejecutamos la orden a motores si no estamos en stop
         move(last_motion_marker[1], last_motion_marker[2], d_speed, 80, false, robot.id, obs_stop_flag)
     else
         current_wait_ticks = 0 
     end
 
     if robot.colored_blob_omnidirectional_camera then               
-        
         local blobs         = robot.colored_blob_omnidirectional_camera
         local yellow_blobs  = {} 
         local green_blobs   = {}  
         local count         = 0   
 
-        -- =========================================================================
         -- FASE A: Recolección y Ruido
-        -- =========================================================================
         for i, blob in ipairs(blobs) do
             local raw_angle = blob.angle * (180 / math.pi)
             local raw_dist = blob.distance
@@ -775,9 +921,7 @@ function store_relative_positions()
         local matched_new_indices = {}
         local fallos_maestros = {}
 
-        -- =========================================================================
-        -- FASE A.5: CORRECCIÓN DE ODOMETRÍA DEL APRENDIZ ANTES DEL MATCHING
-        -- =========================================================================
+        -- FASE A.5: CORRECCIÓN DE ODOMETRÍA
         if motion_active then
             local ang_total_1_rad = move_angle + srt_ang_mark_ant 
             local x_new_r, y_new_r = math_helper.polarACartesianoPAR(move_distance, ang_total_1_rad)
@@ -791,7 +935,7 @@ function store_relative_positions()
                 y_ant_r = y_mark
                 motion_active = false
                 current_wait_ticks = 0 
-                r_move() -- <--- LIMPIEZA TOTAL AL FINALIZAR
+                r_move() 
                 robot.wheels.set_velocity(0, 0)
                 change_al_state("IDLE", "") 
             end
@@ -800,14 +944,10 @@ function store_relative_positions()
             y_mark = y_ant_r
         end
         
-        -- Pre-calculamos el offset global para que todas las fases lo compartan y se congele en este tick
         local obs_ang_offset_global = srt_ang_mark_ant + (motion_active and move_angle or 0)
 
-        -- =========================================================================
-        -- FASE B: ACTUALIZACIÓN DE MAESTROS EXISTENTES (Asignación Euclidiana GLOBAL REAL)
-        -- =========================================================================
+        -- FASE B: ACTUALIZACIÓN DE MAESTROS EXISTENTES
         local candidatos = {}
-
         for j, new_data in ipairs(yellow_blobs) do
             local ang_total_blob = (new_data.angle * (math.pi/180)) + obs_ang_offset_global
             local bx_rel, by_rel = math_helper.polarACartesianoPAR(new_data.distance, ang_total_blob)
@@ -819,9 +959,7 @@ function store_relative_positions()
                     local num_pts = #master_tracking[k].raw_x
                     local mx_global = master_tracking[k].raw_x[num_pts]
                     local my_global = master_tracking[k].raw_y[num_pts]
-                    
                     local error_dist = math.sqrt((bx_global - mx_global)^2 + (by_global - my_global)^2)
-                    
                     if error_dist <= distance_treshold then
                         table.insert(candidatos, {blob_idx = j, master_idx = k, error = error_dist})
                     end
@@ -834,12 +972,10 @@ function store_relative_positions()
         for _, cand in ipairs(candidatos) do
             local j = cand.blob_idx
             local k = cand.master_idx
-            
             if not matched_new_indices[j] and not updated_anterior_indices[k] then
                 srt_anterior_data[k].angle = yellow_blobs[j].angle
                 srt_anterior_data[k].distance = yellow_blobs[j].distance
                 srt_anterior_data[k].type = yellow_blobs[j].type 
-                
                 fallos_maestros[k] = nil 
                 updated_anterior_indices[k] = true
                 matched_new_indices[j] = true
@@ -852,34 +988,25 @@ function store_relative_positions()
                 local num_pts = #master_tracking[k].raw_x
                 local mx_global = master_tracking[k].raw_x[num_pts]
                 local my_global = master_tracking[k].raw_y[num_pts]
-                
                 local distancias_sobrantes = {}
-                
                 for j, new_data in ipairs(yellow_blobs) do
                     if not matched_new_indices[j] then
                         local ang_total_blob = (new_data.angle * (math.pi/180)) + obs_ang_offset_global
                         local bx_rel, by_rel = math_helper.polarACartesianoPAR(new_data.distance, ang_total_blob)
                         local bx_global = bx_rel + x_mark
                         local by_global = by_rel + y_mark
-                        
                         local error_dist = math.sqrt((bx_global - mx_global)^2 + (by_global - my_global)^2)
                         table.insert(distancias_sobrantes, string.format("%.2f cm", error_dist))
                     end
                 end
-
                 local msg_razon = string.format("Ningún blob válido a menos de %.2f cm.", distance_treshold)
-                if #distancias_sobrantes > 0 then
-                    msg_razon = msg_razon .. " Blobs sobrantes a: " .. table.concat(distancias_sobrantes, " | ")
-                else
-                    msg_razon = msg_razon .. " No se detectaron blobs sobrantes."
-                end
+                if #distancias_sobrantes > 0 then msg_razon = msg_razon .. " Blobs sobrantes a: " .. table.concat(distancias_sobrantes, " | ")
+                else msg_razon = msg_razon .. " No se detectaron blobs sobrantes." end
                 fallos_maestros[k] = msg_razon
             end
         end
 
-        -- =========================================================================
         -- FASE C: CREAR NUEVOS MAESTROS
-        -- =========================================================================
         for j, new_data in ipairs(yellow_blobs) do
             if not matched_new_indices[j] then
                 table.insert(srt_anterior_data, {angle = new_data.angle, distance = new_data.distance, type = new_data.type or 2})
@@ -889,9 +1016,7 @@ function store_relative_positions()
             end
         end
 
-        -- =========================================================================
-        -- FASE D: PROCESAR BLOBS VERDES (CORREGIDO A REFERENCIA GLOBAL)
-        -- =========================================================================
+        -- FASE D: PROCESAR BLOBS VERDES
         for _, green_blob in ipairs(green_blobs) do
             local ang_total_green = (green_blob.angle * (math.pi/180)) + obs_ang_offset_global
             local gbx_rel, gby_rel = math_helper.polarACartesianoPAR(green_blob.distance, ang_total_green)
@@ -903,9 +1028,7 @@ function store_relative_positions()
                     local num_pts = #master_tracking[k].raw_x
                     local mx = master_tracking[k].raw_x[num_pts]
                     local my = master_tracking[k].raw_y[num_pts]
-                    
                     local dist_error = math.sqrt((gbx - mx)^2 + (gby - my)^2)
-                    
                     if dist_error <= distance_treshold then
                         srt_anterior_data[k].type = 3 
                         updated_anterior_indices[k] = true 
@@ -917,92 +1040,10 @@ function store_relative_positions()
         end
 
         -- =========================================================================
-        -- FASE E: CÁLCULO DEL CENTROIDE Y DECISIÓN DE MOVIMIENTO (ACTIVE LEARNING)
+        -- FASE E: CÁLCULO Y DECISIÓN DE MOVIMIENTO (ACTIVE LEARNING MODULAR)
         -- =========================================================================
-        local active_count = 0
-        local sum_x, sum_y = 0, 0
-        local closest_master_dist = 999999 
-        local angle_of_closest = 0
-
-        for k, data in pairs(srt_anterior_data) do
-            if updated_anterior_indices[k] and data.angle and data.distance then
-                local mx, my = math_helper.polarACartesianoPAR(data.distance, data.angle * (math.pi/180))
-                sum_x = sum_x + mx
-                sum_y = sum_y + my
-                active_count = active_count + 1
-
-                if data.distance < closest_master_dist then
-                    closest_master_dist = data.distance
-                    angle_of_closest = data.angle
-                end
-            end
-        end
-
-        if active_count > 0 and ENABLE_ACTIVE_LEARNING then
-            local centroid_x = sum_x / active_count
-            local centroid_y = sum_y / active_count
-            local centroid_dist, centroid_angle_rad = math_helper.cartesianoAPolarPAR(centroid_x, centroid_y)
-            local centroid_angle = centroid_angle_rad * (180 / math.pi)
-
-            if AL_LOG_MODE == 2 then
-                log(string.format("[ACTIVE LEARNING] Centroide(%.1f) | Activos: %d | Cerca: %.1f cm", 
-                    centroid_dist, active_count, closest_master_dist))
-            end
-
-            -- [NUEVO] INTERRUPCIÓN DE EMERGENCIA (Prioridad Evasión Master Visión)
-            if closest_master_dist < front_threshold and motion_active and al_current_state == "PERSIGUIENDO_CENTROIDE" then
-                srt_ang_mark_ant = normalize_angle_rad(move_angle + srt_ang_mark_ant)
-                x_ant_r = x_mark
-                y_ant_r = y_mark
-                motion_active = false
-                r_move()  -- <--- LIMPIEZA TOTAL POR ABORTO DE EMERGENCIA
-                robot.wheels.set_velocity(0, 0)
-                change_al_state("IDLE", "") -- Forzamos el IDLE temporal para detonar la evasión abajo
-            end
-
-            -- Lógica Principal Inteligente (Si no nos estamos moviendo ya)
-            if not motion_active then
-                
-                -- CASO 1: Un Maestro está peligrosamente cerca de la cámara
-                if closest_master_dist < front_threshold then
-                    motion_active = true
-                    
-                    -- Buscamos el ángulo relativo entre el centroide y el maestro bloqueador
-                    local diff_ang = centroid_angle - angle_of_closest
-                    if diff_ang > 180 then diff_ang = diff_ang - 360 end
-                    if diff_ang < -180 then diff_ang = diff_ang + 360 end
-                    
-                    local safe_angle = 0
-                    local msg_evasion = ""
-                    
-                    -- Si el maestro bloquea directamente la ruta al centroide (+/- 60 grados)
-                    if math.abs(diff_ang) < 60 then 
-                        if diff_ang >= 0 then
-                            safe_angle = angle_of_closest + 60 -- Esquivar por la izquierda
-                        else
-                            safe_angle = angle_of_closest - 60 -- Esquivar por la derecha
-                        end
-                        msg_evasion = string.format("EVADIENDO MASTER | Rodeando obstáculo visual hacia %.1f° | Dist: %.1f cm", safe_angle, closest_master_dist)
-                    else
-                        -- El camino al centroide está libre de maestros cercanos
-                        safe_angle = centroid_angle
-                        msg_evasion = string.format("EVADIENDO MASTER | Ruta al centroide libre (%.1f°) | Dist: %.1f cm", safe_angle, closest_master_dist)
-                    end
-                    
-                    -- Avanzamos una pequeña distancia hacia la ruta segura elegida
-                    last_motion_marker = {back_threshold * porcentaje, safe_angle}
-                    change_al_state("EVADIENDO_MASTER", msg_evasion)
-                    r_move()
-
-                -- CASO 2: Todos los Maestros están a distancia segura, perseguir centroide
-                elseif centroid_dist > max_tracking_distance then
-                    motion_active = true
-                    last_motion_marker = {centroid_dist * porcentaje, centroid_angle}
-                    local msg_perseguir = string.format("PERSIGUIENDO CENTROIDE | Distancia: %.1f cm | Ángulo: %.1f°", centroid_dist, centroid_angle)
-                    change_al_state("PERSIGUIENDO_CENTROIDE", msg_perseguir)
-                    r_move()
-                end
-            end
+        if ActiveLearning and ActiveLearning.process then
+            ActiveLearning.process(obs_ang_offset_global, updated_anterior_indices)
         end
 
         -- =========================================================================
@@ -1012,14 +1053,12 @@ function store_relative_positions()
             local track = master_tracking[k]
             local is_lost = (srt_anterior_data[k] and srt_anterior_data[k].angle and not updated_anterior_indices[k])
             local is_finished = track and track.End_of_pattern_detected
-            
             if is_lost then
                 if SRP_LOG_MODE == 1 or  SRP_LOG_MODE == 3 then
                     local razon = fallos_maestros[k] or "Sin blobs amarillos cerca."
                     log("\n[!] Maestro " .. k .. " PERDIDO. Razón: " .. razon)
                 end
             end
-            
             if (is_lost or is_finished) and track and not track.processed then
                 process_single_observation(k, track)
                 track.processed = true
@@ -1030,54 +1069,27 @@ function store_relative_positions()
         end
 
         -- =========================================================================
-        -- FASE H: Grabación Continua de Datos (Compensada por movimiento)
+        -- FASE H: Grabación Continua
         -- =========================================================================
         for k, _ in pairs(updated_anterior_indices) do
             local master_data = srt_anterior_data[k]
             local track = master_tracking[k]
-
             if master_data and track and not track.processed then
                 local current_distance = master_data.distance
                 local current_angle_rad = master_data.angle * (math.pi / 180) 
                 local ty = master_data.type
                 
-                -- COMPENSACIÓN CON EL OFFSET UNIFICADO
                 local ang_total = current_angle_rad + obs_ang_offset_global
                 local x_new, y_new = math_helper.polarACartesianoPAR(current_distance, ang_total)
-                
                 local x_original = x_new + x_mark
                 local y_original = y_new + y_mark
 
-                -- >>> LOG: DISTANCIA ENTRE PUNTOS <<<
-                local num_puntos = #track.raw_x
-                if num_puntos > 0 then
-                    local prev_x = track.raw_x[num_puntos]
-                    local prev_y = track.raw_y[num_puntos]
-                    local dist_p2p = math.sqrt((x_original - prev_x)^2 + (y_original - prev_y)^2)
-                    
-                    if SRP_LOG_MODE == 2 or  SRP_LOG_MODE == 3 then 
-                        log(string.format("maestro %d: distancia entre anterior (x,y) y nuevo punto (x,y): %.2f cm", k, dist_p2p)) 
-                    end
-                end
-
-                local print_x = x_original / 100
-                local print_y = y_original / 100
-                if Print_tracker_trayectory_data then Print_tracker_trayectory_data(k, print_x, print_y, false) end
-
-                if AL_LOG_MODE == 2 then
-                    if motion_active and k == 1 then
-                        -- log(string.format("[TRANSFORM] M%d | CamAng: %.2f rad | OffsetRobot: %.2f rad | TotalAng: %.2f rad", 
-                        --     k, current_angle_rad, obs_ang_offset_global, ang_total))
-                    end
-                end
-
+                if Print_tracker_trayectory_data then Print_tracker_trayectory_data("trajectory", k, x_original/100, y_original/100, false) end
                 process_master_segmentation(k, track, x_original, y_original, ty)
             end
         end
-        --log("\n")
     end 
 end
-
 -------------------------------------------------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------------------------------------------------
@@ -1088,7 +1100,7 @@ end
 
 -------------------------------------------------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------------------------------------------------
--- Funcines de acciones/decisiones/sensores de los Qupa
+-- Funcines de sensoores de los Qupa
 -------------------------------------------------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------------------------------------------------
 
@@ -1283,6 +1295,12 @@ RW_b3 = 0
 RW_b2 = 0
 RW_b1 = 0
 
+-------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
+-- Funcines de acciones de los Qupa
+-------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
+
 function RandomWalking()
 
     proximidad()
@@ -1457,7 +1475,7 @@ function move(distance, target_angle, speed_d, speed_g, imprimir, name, stop)
             local min_speed_d = min_speed_d or 5
             local min_speed_g = min_speed_g or 1
 
-            local L = 14 --   static const Real FOOTBOT_INTERWHEEL_DISTANCE      = 0.14f;
+            local L = FOOTBOT_INTERWHEEL_DISTANCE --   static const Real FOOTBOT_INTERWHEEL_DISTANCE      = 0.14f;
             local t = timer
 
             if target_angle > 180 then
@@ -1666,6 +1684,180 @@ function move(distance, target_angle, speed_d, speed_g, imprimir, name, stop)
     end
 end
 
+UMBRAL_INTENSIDAD_EVASION = 0.1   -- Sensibilidad para activar la evasión
+DURACION_TICKS_ARCO = 50          -- Duración en ticks del arco de evasión
+DEBUG_EVASION = 1                 -- 0: Nada, 1: Cambios de estado, 2: Sensores y estados continuos
+
+local estado_evasion = {
+    modo = "NORMAL",      -- "NORMAL", "GIRANDO", "ARCO"
+    ultimo_modo = "",     -- Memoria para imprimir solo 1 vez cuando cambie de estado
+    angulo_giro = 90,     
+    tiempo_arco = 0,
+    alternar_giro = 1     
+}
+
+function sign(x)
+    if x > 0 then return 1
+    elseif x < 0 then return -1
+    else return 0 end
+end
+
+-- =========================================================================
+-- LÓGICA DE NAVEGACIÓN Y EVASIÓN
+-- =========================================================================
+function navegar_a_coordenadas(target_x, target_y, stop_distance)
+    -- --- 1. Calcular Distancias y Ángulo Hacia la Meta ---
+    local current_x = robot.positioning.position.x
+    local current_y = robot.positioning.position.y
+    local dx = target_x - current_x
+    local dy = target_y - current_y
+    local distance = math.sqrt(dx^2 + dy^2)
+
+    -- Condición de Parada
+    if distance <= stop_distance then
+        robot.wheels.set_velocity(0, 0)
+        estado_evasion.modo = "NORMAL"
+        return true 
+    end
+
+    -- Calcular orientación exacta respecto a la meta desde el inicio (para poder tomar decisiones inteligentes)
+    local angle_to_center = math.atan2(dy, dx)
+    local orientation_quat = robot.positioning.orientation
+    local orientation_angle = math.atan2(
+        2 * (orientation_quat.w * orientation_quat.z + orientation_quat.x * orientation_quat.y),
+        1 - 2 * (orientation_quat.y ^ 2 + orientation_quat.z ^ 2)
+    )
+    local angle_difference = angle_to_center - orientation_angle
+    angle_difference = math.atan2(math.sin(angle_difference), math.cos(angle_difference))
+
+    -- --- 2. Búsqueda del sensor más crítico ---
+    local max_val = 0
+    local max_angle = 0
+    local n_sensores = #robot.proximity
+
+    for i, s in ipairs(robot.proximity) do
+        if s.value > max_val then
+            max_val = s.value
+            local angulo = obtener_angulo_sensor(i, n_sensores)
+            if angulo ~= nil then
+                max_angle = angulo
+            end
+        end
+    end
+
+    -- Detectamos si el choque es FRONTAL (rango de -45° a 45°)
+    local obstaculo_frontal = false
+    if max_val > UMBRAL_INTENSIDAD_EVASION and math.abs(max_angle) <= 45 then
+        obstaculo_frontal = true
+    end
+
+    -- --- 3. LOGS DE DEPURACIÓN ---
+    if DEBUG_EVASION > 0 then
+        -- Imprimir solo 1 vez cuando cambia el estado
+        if estado_evasion.modo ~= estado_evasion.ultimo_modo then
+            if estado_evasion.modo == "NORMAL" then
+                log(string.format("[%s] AVANZANDO A COORDENADA: %.2f, %.2f", robot.id, target_x, target_y))
+            elseif estado_evasion.modo == "GIRANDO" then
+                log(string.format("[%s] GIRANDO %d° para evadir", robot.id, estado_evasion.angulo_giro))
+            elseif estado_evasion.modo == "ARCO" then
+                log(string.format("[%s] ESQUIVANDO (Haciendo Arco)", robot.id))
+            end
+            estado_evasion.ultimo_modo = estado_evasion.modo
+        end
+
+        -- Imprimir continuo si el nivel es 2
+        if DEBUG_EVASION >= 2 then
+            log(string.format("[%s] MODO: %s | MaxProx: %.3f a %.1f° | AngMeta: %.1f°", 
+                robot.id, estado_evasion.modo, max_val, max_angle, math.deg(angle_difference)))
+        end
+    end
+
+    -- --- 4. Máquina de Estados de Evasión ---
+    if estado_evasion.modo == "NORMAL" then
+        if obstaculo_frontal then
+            if max_angle > 5 then
+                estado_evasion.angulo_giro = -90
+            elseif max_angle < -5 then
+                estado_evasion.angulo_giro = 90
+            else
+                estado_evasion.angulo_giro = 90 * estado_evasion.alternar_giro
+                estado_evasion.alternar_giro = estado_evasion.alternar_giro * -1
+            end
+            
+            r_move()
+            estado_evasion.modo = "GIRANDO"
+        end
+
+    elseif estado_evasion.modo == "GIRANDO" then
+        local rc2, rc1 = move(0, estado_evasion.angulo_giro, 0, 50, false, "Evasion", false)
+        
+        if rc1 == 2 then
+            estado_evasion.modo = "ARCO"
+            estado_evasion.tiempo_arco = DURACION_TICKS_ARCO
+        end
+        return false 
+
+    elseif estado_evasion.modo == "ARCO" then
+        if obstaculo_frontal then
+            -- Si choca de frente mientras hace el arco, recalcula un nuevo giro
+            if max_angle > 5 then
+                estado_evasion.angulo_giro = -90
+            elseif max_angle < -5 then
+                estado_evasion.angulo_giro = 90
+            else
+                estado_evasion.angulo_giro = 90 * estado_evasion.alternar_giro
+                estado_evasion.alternar_giro = estado_evasion.alternar_giro * -1
+            end
+            r_move()
+            estado_evasion.modo = "GIRANDO"
+            return false
+
+        -- [NUEVO]: Si está mirando hacia la meta (margen de ~20 grados / 0.35 rad) 
+        -- Y no hay obstáculos en su frente, entonces aborta el arco y va directo.
+        elseif math.abs(angle_difference) < 0.35 and not obstaculo_frontal then
+            estado_evasion.modo = "NORMAL"
+
+        else
+            estado_evasion.tiempo_arco = estado_evasion.tiempo_arco - 1
+            if estado_evasion.tiempo_arco <= 0 then
+                estado_evasion.modo = "NORMAL" 
+            end
+        end
+    end
+
+    -- --- 5. Ejecución del Movimiento Físico ---
+    if estado_evasion.modo == "ARCO" then
+        local velocidad_base = 40
+        local diferencial = 20
+        
+        if estado_evasion.angulo_giro > 0 then
+            robot.wheels.set_velocity(velocidad_base + diferencial, velocidad_base - diferencial)
+        else
+            robot.wheels.set_velocity(velocidad_base - diferencial, velocidad_base + diferencial)
+        end
+        return false 
+        
+    elseif estado_evasion.modo == "NORMAL" then
+        local speed_straight = 50
+        local speed_turn_factor = 100 
+        local max_wheel_speed = 100   
+
+        if math.abs(angle_difference) < 0.1 then
+            robot.wheels.set_velocity(speed_straight, speed_straight)
+        else
+            local turn_speed = speed_turn_factor * angle_difference
+            local vL = -turn_speed
+            local vR = turn_speed
+            
+            if math.abs(vL) > max_wheel_speed then vL = max_wheel_speed * sign(vL) end
+            if math.abs(vR) > max_wheel_speed then vR = max_wheel_speed * sign(vR) end
+
+            robot.wheels.set_velocity(vL, vR)
+        end
+    end
+    
+    return false 
+end
 -------------------------------------------------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------------------------------------------------
 -- 
@@ -1740,15 +1932,15 @@ function resetOBS()
     angles_a_recorrer     = {}
     -- params                = {}
 
+    -- ============================
     posiciones_guardadas = {}
     
-    k                       = 0
-    indice                  = 1
-    PI_c1                   = 0
-    PI_end                  = false
+    indice          = 1
+    PI_end          = false
+    PI_counter_seg  = 0
 
     -- ============================
-    c4            = 0
+    c4              = 0
     -- ============================
     setleds("black")
     r_Temporizador_1()
@@ -1758,32 +1950,29 @@ end
 
 function resetDEM() 
 
-    k = 0
+    -- ============================
+    d1 = 0    
 
-    -- ============================¿
-    d1 = 0
+    -- ============================
+    EAEP_c1 = 0
 
-    master_avg_angle = 0
-
+    -- ============================
     posiciones_guardadas = {}
 
-    indice = 1
-
-    EAEP_c1 = 0
-    EAEP_c2 = 0
-    master_avg_dist_1 = 0
-    EAEP_ang_ant = 0
     -- ============================
+    indice          = 1
+    PI_end          = false
+    PI_counter_seg  = 0
 
+    -- ============================
     --setleds("red")
    
     r_Temporizador_1()
     r_Temporizador_2()
     r_move()
-
 end
 
-
+-- Función auxiliar para limpiar las variables globales de 'move'  y asegurar que arranque un movimiento en limpio
 function r_move() 
 
     c1                  = 0
@@ -1812,6 +2001,10 @@ function r_move()
     -- Variables residuales de Store_relative_position
     full_ticks_a        = 0
     has_rem_a           = false
+    rem_wheel_speed     = 0
+    rem_omega_rad       = 0
+
+    rem_speed_d         = 0
     full_ticks_d        = 0
     has_rem_d           = false
     
@@ -1935,9 +2128,9 @@ function original_params()
     if figura == "triangulo_regular" then
         a = {
             params = {
-            { bigger*20 ,60 },
-            { bigger*20 ,120 },
-            { bigger*20 ,120 },
+            { distance_factor*20 ,60 },
+            { distance_factor*20 ,120 },
+            { distance_factor*20 ,120 },
             { 0, 60}
             },
             name = "triangulo"
@@ -1948,14 +2141,14 @@ function original_params()
     if figura == "octagono"then
         a = {
             params = {
-            { bigger*20 ,-45 },
-            { bigger*20 ,-45 },
-            { bigger*20 ,-45 },
-            { bigger*20 ,-45 },
-            { bigger*20 ,-45 },
-            { bigger*20 ,-45 },
-            { bigger*20 ,-45 },
-            { bigger*20 ,-45 },
+            { distance_factor*20 ,-45 },
+            { distance_factor*20 ,-45 },
+            { distance_factor*20 ,-45 },
+            { distance_factor*20 ,-45 },
+            { distance_factor*20 ,-45 },
+            { distance_factor*20 ,-45 },
+            { distance_factor*20 ,-45 },
+            { distance_factor*20 ,-45 },
             },
             name = "octagono"
         }
@@ -1976,12 +2169,14 @@ function original_params()
     if figura == "Pentágono_irregular" then
         a = {
             params = {
-            { bigger*33.33, 10},
-            { bigger*33.33, 90},
-            { bigger*33.33, 53},
-            { bigger*33.33, 74},
-            { bigger*38.867, 84},
-            { 0, 49}
+            { 0, -30},
+            { 0,  30},
+            { distance_factor*33.33, 0},
+            { distance_factor*33.33, 90},
+            { distance_factor*33.33, 53},
+            { distance_factor*33.33, 74},
+            { distance_factor*38.867, 84},
+            { 0, 59},
             },
             name = "Pentágono_irregular"
         }

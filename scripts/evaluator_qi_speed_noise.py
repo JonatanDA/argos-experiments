@@ -4,12 +4,24 @@ evaluator_qi_speed_noise.py
 
 controllers compatibles: Tr6, Tr7, Ks1
 
-Evaluador pasivo en 2D (Ruido vs Velocidad).
+Evaluador pasivo en 2D (Variables dinámicas).
 - Escucha la salida de multi_run_sim.py.
-- Procesa combinaciones de velocidad (ej. speed_dem) y ruido (ej. NOISE_LEVEL_DIST).
-- Actualiza las gráficas al concluir cada ciclo completo del experimento (N/N).
-- Ajusta el formato automáticamente si recibe una variable de ruido o un par.
-- Permite omitir configuraciones sin datos rellenando con NaN y visualizando de forma punteada.
+- Maneja dinámicamente múltiples patrones (PATRON_1, PATRON_2, etc.).
+- Cada patrón genera su propia ventana de Heatmap (Mediana) y Líneas (configurable: media, mediana, o ambas con dispersión).
+- Exporta Gráficas y Tabla de resultados al terminar.
+- Calcula estadísticas del error de ruido (Media, Std, Mediana) leyendo las coordenadas polares originales y ruidosas.
+- Asigna automáticamente los ejes X y Y dependiendo de las variables que reciba de multi_run_sim.
+- Optimizado para evitar congelamientos durante ejecuciones largas.
+
+FORMATO ESPERADO EN LA SALIDA ESTÁNDAR (STDOUT DEL SIMULADOR):
+Para que el evaluador procese correctamente los datos, el simulador debe imprimir las siguientes líneas:
+- Inicio de configuración:   [MULTI_CONFIG] {"id": 1, "params": {"Velocidad": 5.0, "NOISE_FACTOR": 2.0}}
+- Inicio de simulación:      [SIM_START]
+- Reporte de Blob Original:  Blob perfecto: angulo = 45.0, distancia = 100.0
+- Reporte de Blob Ruidoso:   Blob ruidoso: angulo = 46.5, distancia = 102.3
+- Reporte de Qi:             * El enjambre imita mejor a 'triangulo' con Qi = 0.85
+- Fin de simulación (x/N):   [SIM_END] 1/3
+- Fin de todos los ciclos:   [MULTI_END_ALL]
 """
 
 import sys
@@ -27,17 +39,28 @@ import matplotlib.pyplot as plt
 # =============================================================================
 MOSTRAR_LINEAS_VIVO      = True
 MOSTRAR_HEATMAP_VIVO     = True
+MOSTRAR_TABLA_VIVO       = False   # Se genera solo al final por cuestiones de espacio
 
 GUARDAR_RESULTADOS       = True  
-CARPETA_RESULTADOS       = "Resultados/Robots/Qupa/Tr7/Pentagono/Evaluator_Speed_Noise.1"
+CARPETA_RESULTADOS       = "Resultados/Robots/Qupa/Ks1/Pentagono/Evaluator_Speed_Noise.1"
 
-#PATRON_OBJETIVO          = "triangulo"
-PATRON_OBJETIVO          = "Pentágono_irregular"
+# NOMBRES DE ARCHIVOS A GUARDAR (El {patron} se reemplazará automáticamente por el nombre del patrón)
+NAME_FILE_HEATMAP        = "heatmap_qi_{patron}.png"
+NAME_FILE_LINEAS         = "lineas_qi_{patron}.png"
+NAME_FILE_TABLA          = "tabla_datos.png"
+NAME_FILE_CSV            = "analisis_2d_qi.csv"
 
-# PATRON_2                 = "Pentágono_irregular"
+# Qué métrica quieres ver en la gráfica de líneas: "media", "mediana" o "ambas"
+METRICA_LINEAS           = "ambas"
 
-CSV_OUTPUT       = f"{CARPETA_RESULTADOS}/analisis_2d_qi.csv"
-GRAFICA_OUTPUT   = f"{CARPETA_RESULTADOS}/grafica_2d_qi.png"
+# Patrones geométricos a evaluar (puedes agregar PATRON_3, PATRON_4, etc.)
+# PATRON_1                 = "triangulo"
+PATRON_2                 = "Pentágono_irregular"
+
+# Detección automática de patrones declarados
+PATRONES = [val for key, val in list(globals().items()) if key.startswith("PATRON_") and isinstance(val, str)]
+if not PATRONES:
+    PATRONES = ["Desconocido"]
 
 # =============================================================================
 # ---------- 2. EXPRESIONES REGULARES ----------
@@ -45,146 +68,239 @@ GRAFICA_OUTPUT   = f"{CARPETA_RESULTADOS}/grafica_2d_qi.png"
 ANSI_ESCAPE    = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 REGEX_QI       = re.compile(r"\*.*imita mejor a '([^']+)' con Qi = ([-+]?[0-9]*\.?[0-9]+)")
 
+REGEX_ORIGINAL = re.compile(r"Blob (?:detectado|perfecto):\s*angulo\s*=\s*([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?),\s*distancia\s*=\s*([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)")
+REGEX_RUIDOSO  = re.compile(r"Blob ruidoso(?: detectado)?\s*:\s*angulo\s*=\s*([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?),\s*distancia\s*=\s*([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)")
+
 # =============================================================================
-# ---------- 3. LOGICA DE PROCESAMIENTO DE PARÁMETROS ----------
+# ---------- 3. LOGICA DE PROCESAMIENTO DE PARÁMETROS DINÁMICOS ----------
 # =============================================================================
 def parse_parameters(params):
-    speed_val = 0.0
-    noises = {}
+    keys = list(params.keys())
     
-    for k, v in params.items():
-        if "speed" in k.lower() or "velocidad" in k.lower():
-            speed_val = v
-        else:
-            noises[k] = v
-            
-    primary_noise_val = list(noises.values())[0] if noises else 0.0
-    primary_noise_key = list(noises.keys())[0] if noises else "N/A"
-    
-    if len(noises) > 1:
-        vals = list(noises.values())
-        paired_noise_str = f"{vals[0]:.3f}\n{vals[1]:.3f}"
-    elif len(noises) == 1:
-        paired_noise_str = f"{list(noises.values())[0]:.3f}"
-    else:
-        paired_noise_str = "0.000"
+    if len(keys) == 0:
+        return 0.0, "N/A", 0.0, "N/A", "0.000"
         
-    return speed_val, primary_noise_val, primary_noise_key, paired_noise_str
+    if len(keys) == 1:
+        # Solo se está barriendo 1 variable
+        var_y_name = "N/A"
+        var_y_val = 0.0
+        var_x_name = keys[0]
+        var_x_val = params[keys[0]]
+        var_x_str = f"{var_x_val:.3f}"
+        
+    elif len(keys) == 2:
+        # Se están barriendo 2 variables
+        var_y_name = keys[0]
+        var_y_val = params[keys[0]]
+        var_x_name = keys[1]
+        var_x_val = params[keys[1]]
+        var_x_str = f"{var_x_val:.3f}"
+        
+    else:
+        # Si hay más de 2 variables, se toma la primera para Y, y el resto para X
+        var_y_name = keys[0]
+        var_y_val = params[keys[0]]
+        var_x_name = " / ".join(keys[1:])
+        var_x_val = params[keys[1]] 
+        var_x_str = "\n".join([f"{params[k]:.3f}" for k in keys[1:]])
+        
+    return var_y_val, var_y_name, var_x_val, var_x_name, var_x_str
 
 # =============================================================================
-# ---------- 4. INTERFAZ GRÁFICA EN VIVO ----------
+# ---------- 4. FUNCIONES DE DIBUJADO ----------
 # =============================================================================
-def actualizar_graficas(fig, ax_lines, ax_heat, resultados, noise_key):
-    speeds = sorted(list(set(r['speed'] for r in resultados)))
-    noises_num = sorted(list(set(r['noise_num'] for r in resultados)))
-    noises_str = sorted(list(set(r['noise_str'] for r in resultados)), key=lambda x: float(x.split('\n')[0]))
+def dibujar_grafica_patron(p, resultados, ax_line=None, ax_heat=None):
+    if not resultados:
+        return
+        
+    var_y_name = resultados[0]['var_y_name']
+    var_x_name = resultados[0]['var_x_name']
+        
+    vars_y_vals = sorted(list(set(r['var_y_val'] for r in resultados)))
+    vars_x_vals = sorted(list(set(r['var_x_val'] for r in resultados)))
+    vars_x_strs = sorted(list(set(r['var_x_str'] for r in resultados)), key=lambda x: float(x.split('\n')[0]))
     
-    if ax_lines:
-        ax_lines.clear()
+    cmap = plt.get_cmap('tab10')
+    
+    # ---------- GRÁFICA DE LÍNEAS ----------
+    if ax_line is not None:
+        ax_line.clear()
         
-        # Limpieza segura para el eje twin de varianza sin duplicar
-        for ax in fig.axes:
-            if ax != ax_lines and ax != ax_heat:
-                ax.remove()
-                
-        ax_var = ax_lines.twinx()
-        cmap = plt.get_cmap('tab10')
-        max_var = 0.01
-        
-        for idx, s in enumerate(speeds):
-            data_s = [r for r in resultados if r['speed'] == s]
-            data_s.sort(key=lambda x: x['noise_num'])
+        for idx, y_val in enumerate(vars_y_vals):
+            data_y = [r for r in resultados if r['var_y_val'] == y_val]
+            data_y.sort(key=lambda x: x['var_x_val'])
             
-            x_vals = np.array([r['noise_num'] for r in data_s], dtype=float)
-            y_vals = np.array([r['qi_mean'] for r in data_s], dtype=float)
-            var_vals = np.array([r['qi_var'] for r in data_s], dtype=float)
+            x_vals = np.array([r['var_x_val'] for r in data_y], dtype=float)
+            medias = np.array([r['qi_stats'][p]['media'] for r in data_y], dtype=float)
+            medianas = np.array([r['qi_stats'][p]['mediana'] for r in data_y], dtype=float)
             
-            valid_vars = var_vals[~np.isnan(var_vals)]
-            if len(valid_vars) > 0:
-                max_var = max(max_var, np.nanmax(valid_vars))
-                
-            y_errs = np.array([math.sqrt(v) if not np.isnan(v) else 0.0 for v in var_vals])
+            # Desviación estándar (para la media)
+            stds = np.array([math.sqrt(r['qi_stats'][p]['var']) if not np.isnan(r['qi_stats'][p]['var']) else 0.0 for r in data_y], dtype=float)
             color = cmap(idx % 10)
             
-            # 1. Dibujamos línea punteada que une los datos saltándose los NaN
-            valid_mask = ~np.isnan(y_vals)
-            if np.sum(valid_mask) > 1:
-                ax_lines.plot(x_vals[valid_mask], y_vals[valid_mask], linestyle=':', color=color, alpha=0.7)
+            lbl_media = f'{var_y_name}: {y_val:.1f} (Media)' if var_y_name != "N/A" else 'Media'
+            lbl_mediana = f'{var_y_name}: {y_val:.1f} (Mediana)' if var_y_name != "N/A" else 'Mediana'
             
-            # 2. Dibujamos los puntos y líneas reales (Se romperán naturalmente si hay un NaN)
-            ax_lines.errorbar(x_vals, y_vals, yerr=y_errs, fmt='o-', label=f'Speed: {s:.1f}', capsize=4, color=color, lw=2)
+            # 1. Graficar Media (Con barras de error / desviación estándar)
+            if METRICA_LINEAS in ["media", "ambas"]:
+                alpha_line = 0.5 if METRICA_LINEAS == "ambas" else 1.0
+                lw_line = 1.5 if METRICA_LINEAS == "ambas" else 2.0
+                ls_line = '--' if METRICA_LINEAS == "ambas" else '-'
+                
+                valid_mask = ~np.isnan(medias)
+                if np.sum(valid_mask) > 1:
+                    ax_line.plot(x_vals[valid_mask], medias[valid_mask], linestyle=':', color=color, alpha=0.4)
+                
+                ax_line.errorbar(x_vals, medias, yerr=stds, fmt='o', linestyle=ls_line, 
+                                 label=lbl_media, capsize=4, color=color, lw=lw_line, alpha=alpha_line, zorder=2)
             
-            # 3. Dibujamos la varianza en el segundo eje (Derecha)
-            if len(valid_vars) > 0:
-                ax_var.plot(x_vals, var_vals, linestyle='--', marker='x', alpha=0.4, color=color)
+            # 2. Graficar Mediana (Destacada si es 'ambas')
+            if METRICA_LINEAS in ["mediana", "ambas"]:
+                lw_med = 3.0 if METRICA_LINEAS == "ambas" else 2.0
+                
+                valid_mask = ~np.isnan(medianas)
+                if np.sum(valid_mask) > 1:
+                    ax_line.plot(x_vals[valid_mask], medianas[valid_mask], linestyle=':', color=color, alpha=0.4)
+                
+                ax_line.plot(x_vals, medianas, marker='s', linestyle='-', 
+                             label=lbl_mediana if METRICA_LINEAS == "ambas" else (f'{var_y_name}: {y_val:.1f}' if var_y_name != "N/A" else 'Mediana'), 
+                             color=color, lw=lw_med, zorder=3)
+            
+            # 3. Dispersión (Scatter de valores brutos)
+            for d in data_y:
+                x_val_actual = d['var_x_val']
+                y_raws = d['qi_stats'][p]['raw']
+                if y_raws:
+                    ax_line.scatter([x_val_actual] * len(y_raws), y_raws, color=color, alpha=0.6, s=15, zorder=4)
 
-        ax_lines.set_title('Robustez ante Ruido según Velocidad', fontweight='bold')
-        ax_lines.set_xlabel(f'Ruido Base ({noise_key})')
-        ax_lines.set_ylabel(f'Calidad (Qi - {PATRON_OBJETIVO})')
-        ax_lines.set_ylim(-0.05, 1.05)
-        ax_lines.grid(True, linestyle='-', alpha=0.3)
-        if speeds:
-            ax_lines.legend(loc='upper left')
+        titulo_lineas = f'Robustez ante {var_x_name}' + (f' y {var_y_name}' if var_y_name != "N/A" else '') + f' ({p})'
+        ax_line.set_title(titulo_lineas, fontweight='bold')
+        ax_line.set_xlabel(f'{var_x_name}')
+        ax_line.set_ylabel(f'Calidad de Imitación (Qi)')
+        ax_line.set_ylim(-0.05, 1.05)
+        ax_line.grid(True, linestyle='-', alpha=0.3)
+        
+        if vars_y_vals:
+            ax_line.legend(loc='upper right', fontsize=8)
             
-        ax_var.set_ylabel('Varianza (Qi)', color='gray')
-        ax_var.set_ylim(0, max_var * 1.2) 
-        ax_var.tick_params(axis='y', labelcolor='gray')
+        ax_line.tick_params(axis='x', rotation=45)
 
-    if ax_heat:
+    # ---------- MAPA DE CALOR (Basado en Mediana) ----------
+    if ax_heat is not None:
         ax_heat.clear()
-        if len(speeds) > 0 and len(noises_num) > 0:
-            Z = np.zeros((len(speeds), len(noises_num)))
+        if len(vars_y_vals) > 0 and len(vars_x_vals) > 0:
+            Z = np.zeros((len(vars_y_vals), len(vars_x_vals)))
             Z[:] = np.nan 
             
             for r in resultados:
-                s_idx = speeds.index(r['speed'])
-                n_idx = noises_num.index(r['noise_num'])
-                Z[s_idx, n_idx] = r['qi_mean']
+                y_idx = vars_y_vals.index(r['var_y_val'])
+                x_idx = vars_x_vals.index(r['var_x_val'])
+                Z[y_idx, x_idx] = r['qi_stats'][p]['mediana']
                 
             cax = ax_heat.imshow(Z, aspect='auto', origin='lower', cmap='RdYlGn', vmin=0, vmax=1)
             
-            ax_heat.set_title('Mapa de Calor: Límites Operativos', fontweight='bold')
-            ax_heat.set_xticks(range(len(noises_num)))
-            ax_heat.set_xticklabels(noises_str)
-            ax_heat.set_yticks(range(len(speeds)))
-            ax_heat.set_yticklabels([f"{s:.1f}" for s in speeds])
-            ax_heat.set_xlabel('Pares de Ruido (Dist / Ángulo)' if '\n' in noises_str[0] else f'Ruido ({noise_key})')
-            ax_heat.set_ylabel('Velocidad (speed_dem)')
+            ax_heat.set_title(f'Mapa de Calor: Límites Operativos ({p})\n[Valores = Mediana]', fontweight='bold')
+            ax_heat.set_xticks(range(len(vars_x_vals)))
+            ax_heat.set_xticklabels(vars_x_strs)
+            ax_heat.set_yticks(range(len(vars_y_vals)))
+            ax_heat.set_yticklabels([f"{y:.2f}" for y in vars_y_vals] if var_y_name != "N/A" else ["-"])
             
-            for i in range(len(speeds)):
-                for j in range(len(noises_num)):
+            ax_heat.set_xlabel(f'{var_x_name}')
+            ax_heat.set_ylabel(f'{var_y_name}' if var_y_name != "N/A" else "Fija")
+            
+            for i in range(len(vars_y_vals)):
+                for j in range(len(vars_x_vals)):
                     if not np.isnan(Z[i, j]):
                         text_color = "black" if 0.3 < Z[i, j] < 0.8 else "white"
                         ax_heat.text(j, i, f"{Z[i, j]:.2f}", ha="center", va="center", color=text_color, fontweight='bold')
                     else:
                         ax_heat.text(j, i, "-", ha="center", va="center", color="gray", fontweight='bold')
+                        
+            ax_heat.tick_params(axis='x', rotation=45)
 
-    fig.canvas.draw_idle()
-    plt.pause(0.05)
+def dibujar_tabla(resultados, ax_table):
+    if not resultados: return
+    ax_table.clear()
+    ax_table.axis('off')
+    ax_table.axis('tight')
+    
+    var_y_name = resultados[0]['var_y_name']
+    var_x_name = resultados[0]['var_x_name']
+    
+    cols = ['ID', var_y_name if var_y_name != "N/A" else "Var_Y", var_x_name, 'Ruido Media\n(cm)', 'Ruido Std\n(cm)', 'Ruido Mediana\n(cm)']
+    for p in PATRONES:
+        cols.extend([f'Media\n{p[:4]}', f'Mediana\n{p[:4]}', f'Std\n{p[:4]}'])
+        
+    table_data = []
+    for r in resultados:
+        fila = [
+            r['id'],
+            f"{r['var_y_val']:.2f}" if r['var_y_name'] != "N/A" else "-",
+            r['var_x_str'].replace("\n", " / "),
+            f"{r['ruido_stats']['media']:.2f}",
+            f"{r['ruido_stats']['std']:.2f}",
+            f"{r['ruido_stats']['mediana']:.2f}"
+        ]
+        for p in PATRONES:
+            media = r['qi_stats'][p]['media']
+            mediana = r['qi_stats'][p]['mediana']
+            var = r['qi_stats'][p]['var']
+            std = math.sqrt(var) if not np.isnan(var) else 0.0
+            
+            fila.extend([
+                f"{media:.4f}" if not np.isnan(media) else "-",
+                f"{mediana:.4f}" if not np.isnan(mediana) else "-",
+                f"{std:.4f}" if not np.isnan(std) else "-"
+            ])
+        table_data.append(fila)
+        
+    if table_data:
+        tabla = ax_table.table(cellText=table_data, colLabels=cols, loc='center', cellLoc='center')
+        tabla.auto_set_font_size(False)
+        tabla.set_fontsize(9)
+        tabla.scale(1.0, 1.6)
+        ax_table.set_title(f'Resumen Tabular: {var_x_name}' + (f' y {var_y_name}' if var_y_name != "N/A" else '') + ' vs Calidad (Qi)', fontweight='bold', pad=20)
+
 
 # =============================================================================
 # ---------- BUCLE PRINCIPAL ----------
 # =============================================================================
 def main():
-    if MOSTRAR_LINEAS_VIVO or MOSTRAR_HEATMAP_VIVO:
+    figs_lines = {}
+    axs_lines = {}
+    figs_heats = {}
+    axs_heats = {}
+    
+    hay_ventanas_vivas = MOSTRAR_LINEAS_VIVO or MOSTRAR_HEATMAP_VIVO
+
+    if hay_ventanas_vivas:
         plt.ion()
-        cols = (1 if MOSTRAR_LINEAS_VIVO else 0) + (1 if MOSTRAR_HEATMAP_VIVO else 0)
-        fig, axes = plt.subplots(1, cols, figsize=(7 * cols, 6))
-        fig.canvas.manager.set_window_title('Evaluador 2D - Ruido vs Velocidad')
-        
-        if cols == 2: ax_lines, ax_heat = axes[0], axes[1]
-        elif MOSTRAR_LINEAS_VIVO: ax_lines, ax_heat = axes, None
-        else: ax_lines, ax_heat = None, axes
-            
-        plt.tight_layout(pad=3.0)
-        plt.show(block=False)
+        for p in PATRONES:
+            if MOSTRAR_LINEAS_VIVO:
+                fl, al = plt.subplots(figsize=(8, 6))
+                fl.canvas.manager.set_window_title(f'Evaluador 2D - Líneas [{p}]')
+                figs_lines[p] = (fl, al)
+                axs_lines[p] = al 
+                fl.show()
+                
+            if MOSTRAR_HEATMAP_VIVO:
+                fh, ah = plt.subplots(figsize=(7, 6))
+                fh.canvas.manager.set_window_title(f'Evaluador 2D - Heatmap [{p}]')
+                figs_heats[p] = (fh, ah)
+                axs_heats[p] = ah 
+                fh.show()
 
     resultados_totales = []
     cfg_actual = None
     
-    cfg_qi = []
-    sim_max_qi = None
-    noise_key_global = "Ruido"
+    cfg_qi = {p: [] for p in PATRONES}
+    sim_max_qi = {p: -float('inf') for p in PATRONES}  # Inicializado a -infinito
+    
+    cfg_err_media = []
+    cfg_err_mediana = []
+    sim_err_lineal = []
+    last_orig_ang, last_orig_dist = None, None
+    
     line_counter = 0
 
     for linea_bruta in sys.stdin:
@@ -194,81 +310,201 @@ def main():
         if linea.startswith("[MULTI_CONFIG]"):
             data_str = linea.replace("[MULTI_CONFIG]", "").strip()
             cfg_actual = json.loads(data_str)
-            cfg_qi = []
+            cfg_qi = {p: [] for p in PATRONES}
+            cfg_err_media, cfg_err_mediana = [], []
             
         elif linea.startswith("[MULTI_END_ALL]"):
             break
             
         elif linea.startswith("[SIM_START]"):
-            sim_max_qi = None
+            sim_max_qi = {p: -float('inf') for p in PATRONES}  # Reiniciar a -infinito para cada nueva simulación
+            sim_err_lineal = []
+            last_orig_ang, last_orig_dist = None, None
             
         elif linea.startswith("[SIM_END]"):
-            if sim_max_qi is not None:
-                cfg_qi.append(sim_max_qi)
+            for p in PATRONES:
+                # Si no se encontró ningún Qi válido (sigue siendo -inf), guardamos 0.0
+                val_to_append = sim_max_qi[p] if sim_max_qi[p] != -float('inf') else 0.0
+                cfg_qi[p].append(val_to_append)
             
-            # Formato esperado: [SIM_END] 3/3
+            # Se extrae el promedio y la mediana del error de ruido por simulación
+            s_err_media = statistics.mean(sim_err_lineal) if sim_err_lineal else 0.0
+            s_err_mediana = statistics.median(sim_err_lineal) if sim_err_lineal else 0.0
+            cfg_err_media.append(s_err_media)
+            cfg_err_mediana.append(s_err_mediana)
+            
             match = re.search(r'\[SIM_END\]\s+(\d+)/(\d+)', linea)
             if match:
                 j = int(match.group(1))
                 n = int(match.group(2))
                 
-                # Renderiza al terminar todas las simulaciones de la configuración actual
+                # Renderiza al terminar todas las simulaciones de la config actual
                 if j == n and cfg_actual:
-                    speed_v, noise_num, noise_key, noise_str = parse_parameters(cfg_actual['params'])
-                    noise_key_global = noise_key
-                    
-                    # Si no hay datos, guarda np.nan (se creará la casilla en blanco y puntuado en gráfica)
-                    qi_mean = statistics.mean(cfg_qi) if len(cfg_qi) > 0 else np.nan
-                    qi_var = statistics.variance(cfg_qi) if len(cfg_qi) > 1 else (0.0 if len(cfg_qi) == 1 else np.nan)
+                    var_y_val, var_y_name, var_x_val, var_x_name, var_x_str = parse_parameters(cfg_actual['params'])
                     
                     res = {
                         'id': cfg_actual['id'],
-                        'speed': speed_v,
-                        'noise_num': noise_num,
-                        'noise_str': noise_str,
-                        'qi_mean': qi_mean,
-                        'qi_var': qi_var
+                        'var_y_val': var_y_val,
+                        'var_y_name': var_y_name,
+                        'var_x_val': var_x_val,
+                        'var_x_name': var_x_name,
+                        'var_x_str': var_x_str,
+                        'params_dict': cfg_actual['params'],
+                        'ruido_stats': {
+                            'media': statistics.mean(cfg_err_media) if cfg_err_media else 0.0,
+                            'std': statistics.stdev(cfg_err_media) if len(cfg_err_media) > 1 else 0.0,
+                            'mediana': statistics.median(cfg_err_mediana) if cfg_err_mediana else 0.0
+                        },
+                        'qi_stats': {}
                     }
-                    res.update(cfg_actual['params'])
+                    
+                    for p in PATRONES:
+                        datos = cfg_qi[p]
+                        res['qi_stats'][p] = {
+                            'media': statistics.mean(datos) if len(datos) > 0 else np.nan,
+                            'mediana': statistics.median(datos) if len(datos) > 0 else np.nan,
+                            'var': statistics.variance(datos) if len(datos) > 1 else (0.0 if len(datos) == 1 else np.nan),
+                            'raw': list(datos)
+                        }
+                    
                     resultados_totales.append(res)
                     
-                    if MOSTRAR_LINEAS_VIVO or MOSTRAR_HEATMAP_VIVO:
-                        actualizar_graficas(fig, ax_lines, ax_heat, resultados_totales, noise_key_global)
+                    if hay_ventanas_vivas:
+                        try:
+                            for p in PATRONES:
+                                ax_l = axs_lines.get(p)
+                                ax_h = axs_heats.get(p)
+                                
+                                dibujar_grafica_patron(p, resultados_totales, ax_line=ax_l, ax_heat=ax_h)
+                                
+                                if p in figs_lines:
+                                    figs_lines[p][0].tight_layout(pad=2.0)
+                                    figs_lines[p][0].canvas.draw_idle()
+                                if p in figs_heats:
+                                    figs_heats[p][0].tight_layout(pad=2.0)
+                                    figs_heats[p][0].canvas.draw_idle()
+                                    
+                            plt.pause(0.05)
+                        except Exception:
+                            hay_ventanas_vivas = False
 
         else:
+            match_orig = REGEX_ORIGINAL.search(linea)
+            if match_orig:
+                last_orig_ang = float(match_orig.group(1))
+                last_orig_dist = float(match_orig.group(2))
+                continue
+            
+            match_ruido = REGEX_RUIDOSO.search(linea)
+            if match_ruido and last_orig_ang is not None:
+                rad_orig = math.radians(last_orig_ang)
+                rad_noisy = math.radians(float(match_ruido.group(1)))
+                d_noisy = float(match_ruido.group(2))
+                delta_th = rad_noisy - rad_orig
+                
+                # Fórmula de distancia euclidiana vía ley de cosenos para coordenadas polares
+                e_cuad = (last_orig_dist**2) + (d_noisy**2) - (2 * last_orig_dist * d_noisy * math.cos(delta_th))
+                e_cuad = max(0.0, e_cuad)
+                
+                sim_err_lineal.append(math.sqrt(e_cuad))
+                last_orig_ang = None
+                continue
+                
             match_qi = REGEX_QI.search(linea)
             if match_qi:
                 patron = match_qi.group(1).strip()
                 qi_val = float(match_qi.group(2))
-                if patron == PATRON_OBJETIVO:
-                    sim_max_qi = max(sim_max_qi or 0, qi_val)
+                if patron in PATRONES:
+                    # Se asigna el valor máximo comparando el valor actual y el nuevo Qi encontrado
+                    sim_max_qi[patron] = max(sim_max_qi[patron], qi_val)
 
-        if (MOSTRAR_LINEAS_VIVO or MOSTRAR_HEATMAP_VIVO) and line_counter % 1000 == 0:
-            fig.canvas.flush_events()
+        # Prevenir congelamientos asegurando eventos iterativos sin bloquear
+        if hay_ventanas_vivas and line_counter % 1000 == 0:
+            try:
+                for p in PATRONES:
+                    if p in figs_lines: figs_lines[p][0].canvas.flush_events()
+                    if p in figs_heats: figs_heats[p][0].canvas.flush_events()
+            except Exception:
+                hay_ventanas_vivas = False
 
+    # =========================================================================
+    # ---------- GUARDADO FINAL ----------
+    # =========================================================================
     if resultados_totales and GUARDAR_RESULTADOS:
         print("\n" + "="*70)
         print("[Evaluador 2D] Finalizando y exportando reportes...")
         os.makedirs(CARPETA_RESULTADOS, exist_ok=True)
         
-        with open(CSV_OUTPUT, mode='w', newline='') as f:
-            writer = csv.writer(f)
-            vars_keys = [k for k in resultados_totales[0].keys() if k not in ['id', 'speed', 'noise_num', 'noise_str', 'qi_mean', 'qi_var']]
-            # Se verá la Variación (Qi_Var) añadida en la tabla CSV
-            headers = ['Config_ID'] + vars_keys + [f'Qi_Mean_{PATRON_OBJETIVO}', f'Qi_Var_{PATRON_OBJETIVO}']
-            writer.writerow(headers)
+        # 1. Guardar CSV
+        csv_path = os.path.join(CARPETA_RESULTADOS, NAME_FILE_CSV)
+        try:
+            with open(csv_path, mode='w', newline='') as f:
+                writer = csv.writer(f)
+                vars_keys = list(resultados_totales[0]['params_dict'].keys())
+                
+                headers = ['Config_ID'] + vars_keys + ['Ruido_Media', 'Ruido_Std', 'Ruido_Mediana']
+                for p in PATRONES:
+                    headers.extend([f'Media_{p}', f'Mediana_{p}', f'Var_{p}'])
+                writer.writerow(headers)
+                
+                for r in resultados_totales:
+                    fila = [r['id']] + [r['params_dict'][k] for k in vars_keys] + [
+                           r['ruido_stats']['media'], r['ruido_stats']['std'], r['ruido_stats']['mediana']]
+                    for p in PATRONES:
+                        fila.extend([r['qi_stats'][p]['media'], r['qi_stats'][p]['mediana'], r['qi_stats'][p]['var']])
+                    writer.writerow(fila)
+            print(f"[Evaluador 2D] CSV guardado en: {csv_path}")
+        except Exception as e:
+            print(f"[Evaluador 2D] Error al guardar CSV: {e}")
             
-            for r in resultados_totales:
-                fila = [r['id']] + [r[k] for k in vars_keys] + [r['qi_mean'], r['qi_var']]
-                writer.writerow(fila)
-        print(f"[Evaluador 2D] CSV guardado en: {CSV_OUTPUT}")
-        
-        if MOSTRAR_LINEAS_VIVO or MOSTRAR_HEATMAP_VIVO:
-            plt.figure(fig.number) 
-            plt.savefig(GRAFICA_OUTPUT, dpi=200, bbox_inches='tight')
-            print(f"[Evaluador 2D] Gráfica combinada guardada en: {GRAFICA_OUTPUT}")
-            plt.ioff()
-            plt.show()
+        # 2. Guardar Gráficas para cada patrón (Líneas y Heatmap)
+        for p in PATRONES:
+            # --- Guardar Líneas ---
+            try:
+                fl, al = figs_lines.get(p, (None, None))
+                if not fl or not plt.fignum_exists(fl.number):
+                    fl, al = plt.subplots(figsize=(8, 6))
+                
+                dibujar_grafica_patron(p, resultados_totales, ax_line=al)
+                
+                path_l = os.path.join(CARPETA_RESULTADOS, NAME_FILE_LINEAS.format(patron=p))
+                fl.savefig(path_l, dpi=200, bbox_inches='tight')
+                print(f"[Evaluador 2D] Líneas ({p}) guardadas en: {path_l}")
+            except Exception as e:
+                print(f"[Evaluador 2D] Error al guardar líneas de {p}: {e}")
+
+            # --- Guardar Heatmap ---
+            try:
+                fh, ah = figs_heats.get(p, (None, None))
+                if not fh or not plt.fignum_exists(fh.number):
+                    fh, ah = plt.subplots(figsize=(7, 6))
+                
+                dibujar_grafica_patron(p, resultados_totales, ax_heat=ah)
+                
+                path_h = os.path.join(CARPETA_RESULTADOS, NAME_FILE_HEATMAP.format(patron=p))
+                fh.savefig(path_h, dpi=200, bbox_inches='tight')
+                print(f"[Evaluador 2D] Heatmap ({p}) guardado en: {path_h}")
+            except Exception as e:
+                print(f"[Evaluador 2D] Error al guardar heatmap de {p}: {e}")
+
+        # 3. Crear y Guardar Tabla Final
+        try:
+            alto_dinamico = max(5, (len(resultados_totales) * 0.3) + 2)
+            fig_table, ax_table = plt.subplots(figsize=(14, alto_dinamico))
+            dibujar_tabla(resultados_totales, ax_table)
+            
+            path_t = os.path.join(CARPETA_RESULTADOS, NAME_FILE_TABLA)
+            fig_table.savefig(path_t, dpi=200, bbox_inches='tight')
+            print(f"[Evaluador 2D] Tabla de resumen guardada en: {path_t}")
+        except Exception as e:
+            print(f"[Evaluador 2D] Error al guardar tabla: {e}")
+
+        if hay_ventanas_vivas:
+            try:
+                plt.ioff()
+                plt.show()
+            except Exception:
+                pass
 
 if __name__ == '__main__':
     main()
