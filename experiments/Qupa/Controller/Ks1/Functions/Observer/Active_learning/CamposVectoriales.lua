@@ -1,6 +1,4 @@
 local ActiveLearning = {}
-
--- Memoria local para el suavizado de la ventana de tiempo
 local history_x = {}
 local history_y = {}
 
@@ -11,7 +9,6 @@ local function get_smoothed_values(new_x, new_y)
     table.insert(history_x, new_x)
     table.insert(history_y, new_y)
 
-    -- Mantener el tamaño del buffer
     while #history_x > max_ticks do
         table.remove(history_x, 1)
         table.remove(history_y, 1)
@@ -27,17 +24,12 @@ local function get_smoothed_values(new_x, new_y)
         end
         return sx / #history_x, sy / #history_y
     else
-        -- Mediana (ignora valores extremos/ruido)
         local tx, ty = {}, {}
         for i = 1, #history_x do tx[i] = history_x[i]; ty[i] = history_y[i] end
-        table.sort(tx)
-        table.sort(ty)
+        table.sort(tx); table.sort(ty)
         local mid = math.floor(#tx / 2) + 1
-        if #tx % 2 == 0 then
-            return (tx[mid-1] + tx[mid]) / 2.0, (ty[mid-1] + ty[mid]) / 2.0
-        else
-            return tx[mid], ty[mid]
-        end
+        if #tx % 2 == 0 then return (tx[mid-1] + tx[mid]) / 2.0, (ty[mid-1] + ty[mid]) / 2.0
+        else return tx[mid], ty[mid] end
     end
 end
 
@@ -72,7 +64,6 @@ function ActiveLearning.process(obs_ang_offset_global, updated_anterior_indices)
             sum_fx = sum_fx + fx
             sum_fy = sum_fy + fy
 
-            -- La detección de cercanía es INSTANTÁNEA (para evasión segura)
             if d < closest_master_dist then
                 closest_master_dist = d
                 angle_of_closest = data.angle
@@ -81,7 +72,6 @@ function ActiveLearning.process(obs_ang_offset_global, updated_anterior_indices)
     end
 
     if active_count > 0 and ENABLE_ACTIVE_LEARNING then
-        -- Aplicamos el filtro de suavizado a las fuerzas resultantes
         local smooth_fx, smooth_fy = get_smoothed_values(sum_fx, sum_fy)
         
         local resultant_force, resultant_angle_rad = math_helper.cartesianoAPolarPAR(smooth_fx, smooth_fy)
@@ -90,7 +80,7 @@ function ActiveLearning.process(obs_ang_offset_global, updated_anterior_indices)
         if Print_tracker_trayectory_data then
             local ang_total_res = resultant_angle_rad + obs_ang_offset_global
             local res_gx, res_gy = math_helper.polarACartesianoPAR(resultant_force, ang_total_res)
-            Print_tracker_trayectory_data("Active_learning", 2, "Qupa4", 0, 0, res_gx/100, res_gy/100)
+            Print_tracker_trayectory_data("Active_learning", 4, "Qupa4", 0, 0, res_gx/100, res_gy/100)
         end
 
         if AL_LOG_MODE == 2 then
@@ -123,21 +113,34 @@ function ActiveLearning.process(obs_ang_offset_global, updated_anterior_indices)
                     safe_angle = resultant_angle
                     msg_evasion = string.format("EVADIENDO MASTER | Ruta resultante libre (%.1f°) | Dist: %.1f cm", safe_angle, closest_master_dist)
                 end
-                last_motion_marker = {back_threshold * porcentaje, safe_angle}
+                
+                -- EVASIÓN: Velocidad máxima
+                last_motion_marker = {back_threshold * porcentaje, safe_angle, d_speed, g_speed}
                 change_al_state("EVADIENDO_MASTER", msg_evasion)
                 r_move()
             elseif resultant_force > MIN_FORCE_THRESHOLD then
                 motion_active = true
                 local move_dist = resultant_force 
                 if move_dist > (max_tracking_distance * 2) then move_dist = (max_tracking_distance * 2) end
-                last_motion_marker = {move_dist * porcentaje, resultant_angle}
+                
+                -- ===============================================================
+                -- CÁLCULO DE VELOCIDADES DINÁMICAS (SATURADAS)
+                -- ===============================================================
+                local global_d = d_speed or 30
+                local global_g = g_speed or 80
+                
+                local dyn_speed_d = math.min(global_d, math.max(5.0, math.abs(move_dist)))
+                local dyn_speed_g = math.min(global_g, math.max(10.0, math.abs(resultant_angle)))
+                
+                -- Enviamos: {Distancia, Ángulo, Vel_Lineal, Vel_Angular}
+                last_motion_marker = {move_dist * porcentaje, resultant_angle, dyn_speed_d, dyn_speed_g}
+                
                 local msg_perseguir = string.format("SIGUIENDO FUERZAS | Magnitud: %.1f | Ángulo: %.1f°", resultant_force, resultant_angle)
                 change_al_state("SIGUIENDO_FUERZAS", msg_perseguir)
                 r_move()
             end
         end
     else
-        -- Si no vemos a nadie, borramos la memoria para evitar fantasmas
         history_x = {}
         history_y = {}
     end

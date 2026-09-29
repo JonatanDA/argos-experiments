@@ -58,10 +58,18 @@ function ActiveLearning.process(obs_ang_offset_global, updated_anterior_indices)
         local centroid_dist, centroid_angle_rad = math_helper.cartesianoAPolarPAR(smooth_x, smooth_y)
         local centroid_angle = centroid_angle_rad * (180 / math.pi)
 
+        -- [AÑADIDO] Gráfica en el Tracker (Convertimos a global para que las flechas tengan sentido)
+        if Print_tracker_trayectory_data then
+            local ang_total_cent = centroid_angle_rad + obs_ang_offset_global
+            local cgx, cgy = math_helper.polarACartesianoPAR(centroid_dist, ang_total_cent)
+            Print_tracker_trayectory_data("Active_learning", 1, "Qupa4", 0, 0, cgx/100, cgy/100)
+        end
+
         if AL_LOG_MODE == 2 then
             log(string.format("[ACTIVE LEARNING] Centroide(%.1f) | Activos: %d | Cerca: %.1f cm", centroid_dist, active_count, closest_master_dist))
         end
 
+        -- Evasión de emergencia
         if closest_master_dist < front_threshold and motion_active and al_current_state == "PERSIGUIENDO_CENTROIDE" then
             srt_ang_mark_ant = normalize_angle_rad(move_angle + srt_ang_mark_ant)
             x_ant_r = x_mark
@@ -74,6 +82,7 @@ function ActiveLearning.process(obs_ang_offset_global, updated_anterior_indices)
 
         if not motion_active then
             if closest_master_dist < front_threshold then
+                -- RUTINA DE EVASIÓN (Prioridad absoluta)
                 motion_active = true
                 local diff_ang = centroid_angle - angle_of_closest
                 if diff_ang > 180 then diff_ang = diff_ang - 360 end
@@ -83,15 +92,18 @@ function ActiveLearning.process(obs_ang_offset_global, updated_anterior_indices)
                 if math.abs(diff_ang) < 60 then 
                     if diff_ang >= 0 then safe_angle = angle_of_closest + 60
                     else safe_angle = angle_of_closest - 60 end
-                    msg_evasion = string.format("EVADIENDO MASTER | Rodeando obstáculo visual hacia %.1f° | Dist: %.1f cm", safe_angle, closest_master_dist)
+                    msg_evasion = string.format("EVADIENDO MASTER | Rodeando obstáculo visual hacia %.1f°", safe_angle)
                 else
                     safe_angle = centroid_angle
-                    msg_evasion = string.format("EVADIENDO MASTER | Ruta al centroide libre (%.1f°) | Dist: %.1f cm", safe_angle, closest_master_dist)
+                    msg_evasion = string.format("EVADIENDO MASTER | Ruta al centroide libre (%.1f°)", safe_angle)
                 end
                 last_motion_marker = {back_threshold * porcentaje, safe_angle}
                 change_al_state("EVADIENDO_MASTER", msg_evasion)
                 r_move()
-            elseif centroid_dist > max_tracking_distance then
+            else
+                -- [MODIFICADO] RUTINA COMPLETAMENTE REACTIVA
+                -- Ya no validamos "elseif centroid_dist > max_tracking_distance"
+                -- Simplemente, si no estamos evadiendo, VAMOS al centroide, siempre.
                 motion_active = true
                 last_motion_marker = {centroid_dist * porcentaje, centroid_angle}
                 local msg_perseguir = string.format("PERSIGUIENDO CENTROIDE | Distancia: %.1f cm | Ángulo: %.1f°", centroid_dist, centroid_angle)

@@ -375,13 +375,11 @@ def main():
         # --- LÓGICA DE INTERFAZ GRÁFICA EN VIVO ---
         if MOSTRAR_MAPA_CALOR:
             if DISPOSICION_MAPA == 2:
-                # Mapa a la izquierda, Trayectorias al centro, Estadísticas a la derecha
                 fig_main, axs = plt.subplots(1, 3, figsize=(15, 7), gridspec_kw={'width_ratios': [5, 5, 2]})
                 ax_map = axs[0]
                 ax_main = axs[1]
                 ax_info = axs[2]
             else:
-                # Trayectorias y Mapa superpuestos, Estadísticas a la derecha
                 fig_main, axs = plt.subplots(1, 2, figsize=(10, 7), gridspec_kw={'width_ratios': [7, 3]})
                 ax_main = axs[0]
                 ax_map = ax_main
@@ -491,7 +489,7 @@ def main():
                         data_robots[name]['ys'] = data_robots[name]['ys'][-N:]
 
             ax_main.clear()
-            ax_main.set_aspect('equal', adjustable='box') # Fuerza cuadratura 1:1
+            ax_main.set_aspect('equal', adjustable='box')
             ax_main.set_xlim(args.xmin, args.xmax); ax_main.set_ylim(args.ymin, args.ymax)
             ax_main.set_xlabel('X'); ax_main.set_ylabel('Y')
             ax_main.set_title(get_formatted_title(TITULO_GRAFICA, latest_sim_time, SIM_TICKS_PER_SEC))
@@ -499,7 +497,7 @@ def main():
             
             if ax_map is not None and ax_map != ax_main:
                 ax_map.clear()
-                ax_map.set_aspect('equal', adjustable='box') # Fuerza cuadratura 1:1
+                ax_map.set_aspect('equal', adjustable='box')
                 ax_map.set_xlim(args.xmin, args.xmax); ax_map.set_ylim(args.ymin, args.ymax)
                 ax_map.set_xlabel('X'); ax_map.set_ylabel('Y')
                 ax_map.set_title(get_formatted_title("Mapa de Calor", latest_sim_time, SIM_TICKS_PER_SEC))
@@ -514,44 +512,31 @@ def main():
                 if max_heat > 0:
                     vmax_calc = max_heat * (10.0 / max(0.1, SENSIBILIDAD_MAPA))
                     vmax_calc = max(vmax_calc, 0.1) 
-                    
                     alpha_map_calc = min(1.0, max(0.0, 0.5 * TRANSPARENCIA_MAPA)) if DISPOSICION_MAPA == 1 else min(1.0, max(0.0, TRANSPARENCIA_MAPA))
-                    
                     ax_map.imshow(heatmap_live, extent=(args.xmin, args.xmax, args.ymin, args.ymax),
                                    origin='lower', cmap=heat_cmap, vmin=0.1, vmax=vmax_calc, alpha=alpha_map_calc,
                                    interpolation='gaussian', zorder=1)
-                                   
                     if ax_map != ax_main:
                         xs_obs, ys_obs = data_robots[OBSERVADOR_ID]['xs'], data_robots[OBSERVADOR_ID]['ys']
                         if xs_obs and ys_obs and xs_obs[-1] is not None:
                             ax_map.scatter([xs_obs[-1]], [ys_obs[-1]], s=25, color='white', edgecolor='black', zorder=5)
 
-            # --- ACTUALIZAR PANEL LATERAL (Sin emojis para evitar advertencias de fuentes) ---
+            # --- ACTUALIZAR PANEL LATERAL ---
             if ax_info is not None:
                 ax_info.clear()
                 ax_info.axis('off')
-                
-                maestros_activos = sum(
-                    1 for r_name, r_data in data_robots.items()
-                    if r_name != OBSERVADOR_ID and r_name not in TRAYECTORIAS_PERMANENTES
-                    and len(r_data['xs']) > 0 and r_data['xs'][-1] is not None
-                )
-
-                info_text = (
-                    f"ESTADÍSTICAS\n"
-                    f"{'-'*20}\n\n"
-                    f"Tiempo Transcurrido:\n   {latest_sim_time:.2f} s\n\n"
-                    f"Maestros Activos:\n   {maestros_activos}\n\n"
-                    f"Total Maestros Vistos:\n   {len(total_maestros_set)}\n\n"
-                    f"Distancia Recorrida:\n   {distancia_total_observador:.2f} m\n"
-                )
+                maestros_activos = sum(1 for r_name, r_data in data_robots.items() if r_name != OBSERVADOR_ID and r_name not in TRAYECTORIAS_PERMANENTES and len(r_data['xs']) > 0 and r_data['xs'][-1] is not None)
+                info_text = (f"ESTADÍSTICAS\n{'-'*20}\n\n"
+                             f"Tiempo Transcurrido:\n   {latest_sim_time:.2f} s\n\n"
+                             f"Maestros Activos:\n   {maestros_activos}\n\n"
+                             f"Total Maestros Vistos:\n   {len(total_maestros_set)}\n\n"
+                             f"Distancia Recorrida:\n   {distancia_total_observador:.2f} m\n")
                 ax_info.text(0.0, 0.95, info_text, transform=ax_info.transAxes, fontsize=11, va='top', ha='left', fontweight='bold', color='#333333')
 
             for i, name in enumerate(sorted(data_robots.keys())):
                 xs, ys = data_robots[name]['xs'], data_robots[name]['ys']
                 display_name, color = get_display_name(name), name_to_color.get(name, get_color(i))
                 if not xs or not ys: continue
-                
                 if name == OBSERVADOR_ID:
                     lw_current = lw_diam if OBSERVADOR_USA_DIAMETRO else 1.5
                     s_current  = lw_diam**2 if OBSERVADOR_USA_DIAMETRO else 25
@@ -573,8 +558,7 @@ def main():
                     else:
                         xs_clean = [x for x in xs if x is not None]
                         ys_clean = [y for y in ys if y is not None]
-                        if xs_clean:
-                            ax_main.scatter(xs_clean, ys_clean, s=s_current, color=color, label=display_name, zorder=6)
+                        if xs_clean: ax_main.scatter(xs_clean, ys_clean, s=s_current, color=color, label=display_name, zorder=6)
 
             if MODO_VISUAL_OBSERVADOR > 0 and MODO_CIRCULO > 0 and OBSERVADOR_ID in data_robots:
                 xs_obs, ys_obs = data_robots[OBSERVADOR_ID]['xs'], data_robots[OBSERVADOR_ID]['ys']
@@ -588,18 +572,42 @@ def main():
             for n in list(current_al_data.keys()): 
                 if latest_sim_time - current_al_data[n]['ts'] > DEAD_TIME_LIMIT: del current_al_data[n]
 
+            # =========================================================================
+            # RENDERIZADO MODULAR DE ACTIVE LEARNING (ENVIVO)
+            # =========================================================================
             for n, al_info in current_al_data.items():
                 x_rob, y_rob = al_info['x'], al_info['y']
                 mode = al_info['data']['mode']
                 extras = al_info['data']['extras']
                 
-                if mode in [1, 3] and len(extras) >= 2:
-                    cx, cy = extras[0], extras[1]
-                    ax_main.arrow(x_rob, y_rob, cx, cy, head_width=0.04, head_length=0.06, fc='orange', ec='orange', alpha=0.8, length_includes_head=True, zorder=7)
-                    ax_main.plot(x_rob + cx, y_rob + cy, marker='X', markersize=6, color='orange', markeredgewidth=1, zorder=7)
-                elif mode == 2 and len(extras) >= 2:
-                    fx, fy = extras[0], extras[1]
-                    ax_main.arrow(x_rob, y_rob, fx, fy, head_width=0.04, head_length=0.06, fc='red', ec='red', alpha=0.9, linewidth=2, length_includes_head=True, zorder=7)
+                if mode == 1:
+                    # Modo 1: Centroide Básico
+                    if len(extras) >= 2:
+                        cx, cy = extras[0], extras[1]
+                        ax_main.arrow(x_rob, y_rob, cx, cy, head_width=0.04, head_length=0.06, fc='orange', ec='orange', alpha=0.8, length_includes_head=True, zorder=7)
+                        ax_main.plot(x_rob + cx, y_rob + cy, marker='X', markersize=6, color='orange', markeredgewidth=1, zorder=7)
+                
+                elif mode == 2:
+                    # Modo 2: Centroide Threshold
+                    if len(extras) >= 2:
+                        cx, cy = extras[0], extras[1]
+                        ax_main.arrow(x_rob, y_rob, cx, cy, head_width=0.04, head_length=0.06, fc='orange', ec='orange', alpha=0.8, length_includes_head=True, zorder=7)
+                        ax_main.plot(x_rob + cx, y_rob + cy, marker='X', markersize=6, color='orange', markeredgewidth=1, zorder=7)
+                
+                elif mode == 3:
+                    # Modo 3: Centroide PID
+                    if len(extras) >= 2:
+                        cx, cy = extras[0], extras[1]
+                        # Las variables de control extras (pid_output, speed_d, speed_g) vienen en extras[2], extras[3], extras[4]
+                        # Por ahora graficamos el centroide de forma estándar:
+                        ax_main.arrow(x_rob, y_rob, cx, cy, head_width=0.04, head_length=0.06, fc='orange', ec='orange', alpha=0.8, length_includes_head=True, zorder=7)
+                        ax_main.plot(x_rob + cx, y_rob + cy, marker='X', markersize=6, color='orange', markeredgewidth=1, zorder=7)
+                
+                elif mode == 4:
+                    # Modo 4: Campos Vectoriales
+                    if len(extras) >= 2:
+                        fx, fy = extras[0], extras[1]
+                        ax_main.arrow(x_rob, y_rob, fx, fy, head_width=0.04, head_length=0.06, fc='red', ec='red', alpha=0.9, linewidth=2, length_includes_head=True, zorder=7)
 
             draw_labels_clamped(ax_main, data_robots, args.xmin, args.xmax, args.ymin, args.ymax, first_pos_dict=first_seen_positions)
             return []
@@ -617,15 +625,12 @@ def main():
                 if inactivity_timeout is not None:
                     if (time.time() - last_time_holder[0]) > inactivity_timeout: stop_event.set()
                 
-                # --- REQUERIMIENTO: IMPRESIÓN INMEDIATA AL RECIBIR DEFAULT_END_PATTERN ---
                 if stop_event.is_set() and q.empty():
                     if not printed_stats:
                         print(f"\n[Tracker trajectory] Total_distancia_apprentice={distancia_total_observador:.4f}&Total_masters={len(total_maestros_set)}")
                         printed_stats = True
-                        ani.event_source.stop()  # Congela la gráfica para que deje de actualizarse de inmediato
-                    
-                    if AUTO_CLOSE_WINDOWS:
-                        break
+                        ani.event_source.stop()  
+                    if AUTO_CLOSE_WINDOWS: break
                         
         except KeyboardInterrupt: 
             stop_event.set()
@@ -646,7 +651,6 @@ def main():
                 plt.ioff()
                 plt.show()
 
-        # Respaldo por si cerró la ventana manualmente antes del fin de simulación
         if not printed_stats:
             print(f"\n[Tracker trajectory] Total_distancia_apprentice={distancia_total_observador:.4f}&Total_masters={len(total_maestros_set)}")
             printed_stats = True
@@ -711,12 +715,10 @@ def main():
             accum = {n: {'xs': [], 'ys': []} for n in names_to_plot}
             vid_last_seen, vid_first_seen_positions = {}, {}
             fallback_ts = 0.0
-            
             heatmap_video = np.zeros((RESOLUCION_MAPA, RESOLUCION_MAPA))
 
-            # --- LÓGICA DE INTERFAZ DE VIDEO (OFFLINE) ---
             if RENDERIZAR_MAPA_CALOR and DISPOSICION_MAPA == 2:
-                fig_save = Figure(figsize=(14,7), dpi=100) # Más ancha para lado a lado
+                fig_save = Figure(figsize=(14,7), dpi=100) 
                 ax_save_map = fig_save.add_subplot(121)
                 ax_save = fig_save.add_subplot(122)
             else:
@@ -778,7 +780,7 @@ def main():
                             accum[n]['xs'], accum[n]['ys'] = accum[n]['xs'][-N:], accum[n]['ys'][-N:]
 
                 ax_save.clear()
-                ax_save.set_aspect('equal', adjustable='box') # Fuerza cuadratura 1:1
+                ax_save.set_aspect('equal', adjustable='box') 
                 ax_save.set_xlim(args.xmin, args.xmax); ax_save.set_ylim(args.ymin, args.ymax)
                 ax_save.set_xlabel('X'); ax_save.set_ylabel('Y')
                 ax_save.set_title(get_formatted_title(TITULO_GRAFICA, current_tick_ts, SIM_TICKS_PER_SEC))
@@ -786,7 +788,7 @@ def main():
                 
                 if ax_save_map is not None and ax_save_map != ax_save:
                     ax_save_map.clear()
-                    ax_save_map.set_aspect('equal', adjustable='box') # Fuerza cuadratura 1:1
+                    ax_save_map.set_aspect('equal', adjustable='box') 
                     ax_save_map.set_xlim(args.xmin, args.xmax); ax_save_map.set_ylim(args.ymin, args.ymax)
                     ax_save_map.set_xlabel('X'); ax_save_map.set_ylabel('Y')
                     ax_save_map.set_title(get_formatted_title("Mapa de Calor", current_tick_ts, SIM_TICKS_PER_SEC))
@@ -795,19 +797,15 @@ def main():
                 pts_per_unit_vid = (ax_save.get_window_extent().width * 72 / fig_save.dpi) / (args.xmax - args.xmin)
                 lw_diam_vid = max(1.5, DIAMETRO_ROBOT * pts_per_unit_vid)
 
-                # --- DIBUJAR MAPA DE CALOR (VIDEO) ---
                 if RENDERIZAR_MAPA_CALOR and OBSERVADOR_ID in accum:
                     max_heat_vid = np.max(heatmap_video)
                     if max_heat_vid > 0:
                         vmax_calc_vid = max_heat_vid * (10.0 / max(0.1, SENSIBILIDAD_MAPA))
                         vmax_calc_vid = max(vmax_calc_vid, 0.1)
-                        
                         alpha_map_calc_vid = min(1.0, max(0.0, 0.5 * TRANSPARENCIA_MAPA)) if DISPOSICION_MAPA == 1 else min(1.0, max(0.0, TRANSPARENCIA_MAPA))
-
                         ax_save_map.imshow(heatmap_video, extent=(args.xmin, args.xmax, args.ymin, args.ymax),
                                        origin='lower', cmap=heat_cmap, vmin=0.1, vmax=vmax_calc_vid, alpha=alpha_map_calc_vid,
                                        interpolation='gaussian', zorder=1)
-                                       
                         if ax_save_map != ax_save:
                             xs_obs, ys_obs = accum[OBSERVADOR_ID]['xs'], accum[OBSERVADOR_ID]['ys']
                             if xs_obs and ys_obs and xs_obs[-1] is not None:
@@ -839,8 +837,7 @@ def main():
                         else:
                             xs_clean = [x for x in xs if x is not None]
                             ys_clean = [y for y in ys if y is not None]
-                            if xs_clean:
-                                ax_save.scatter(xs_clean, ys_clean, s=s_current, color=color, label=display_name, zorder=6)
+                            if xs_clean: ax_save.scatter(xs_clean, ys_clean, s=s_current, color=color, label=display_name, zorder=6)
 
                 if MODO_VISUAL_OBSERVADOR > 0 and MODO_CIRCULO > 0 and OBSERVADOR_ID in accum:
                     xs_obs, ys_obs = accum[OBSERVADOR_ID]['xs'], accum[OBSERVADOR_ID]['ys']
@@ -854,17 +851,34 @@ def main():
                 for n in list(vid_current_al_data.keys()):
                     if current_tick_ts - vid_current_al_data[n]['ts'] > DEAD_TIME_LIMIT: del vid_current_al_data[n]
 
+                # =========================================================================
+                # RENDERIZADO MODULAR DE ACTIVE LEARNING (VIDEO OFFLINE)
+                # =========================================================================
                 for n, al_info in vid_current_al_data.items():
                     x_rob, y_rob = al_info['x'], al_info['y']
                     mode = al_info['data']['mode']
                     extras = al_info['data']['extras']
-                    if mode in [1, 3] and len(extras) >= 2:
-                        cx, cy = extras[0], extras[1]
-                        ax_save.arrow(x_rob, y_rob, cx, cy, head_width=0.04, head_length=0.06, fc='orange', ec='orange', alpha=0.8, length_includes_head=True, zorder=7)
-                        ax_save.plot(x_rob + cx, y_rob + cy, marker='X', markersize=6, color='orange', markeredgewidth=1, zorder=7)
-                    elif mode == 2 and len(extras) >= 2:
-                        fx, fy = extras[0], extras[1]
-                        ax_save.arrow(x_rob, y_rob, fx, fy, head_width=0.04, head_length=0.06, fc='red', ec='red', alpha=0.9, linewidth=2, length_includes_head=True, zorder=7)
+                    
+                    if mode == 1:
+                        if len(extras) >= 2:
+                            cx, cy = extras[0], extras[1]
+                            ax_save.arrow(x_rob, y_rob, cx, cy, head_width=0.04, head_length=0.06, fc='orange', ec='orange', alpha=0.8, length_includes_head=True, zorder=7)
+                            ax_save.plot(x_rob + cx, y_rob + cy, marker='X', markersize=6, color='orange', markeredgewidth=1, zorder=7)
+                    elif mode == 2:
+                        if len(extras) >= 2:
+                            cx, cy = extras[0], extras[1]
+                            ax_save.arrow(x_rob, y_rob, cx, cy, head_width=0.04, head_length=0.06, fc='orange', ec='orange', alpha=0.8, length_includes_head=True, zorder=7)
+                            ax_save.plot(x_rob + cx, y_rob + cy, marker='X', markersize=6, color='orange', markeredgewidth=1, zorder=7)
+                    elif mode == 3:
+                        if len(extras) >= 2:
+                            cx, cy = extras[0], extras[1]
+                            # Aquí también se recibirán los datos de PID extras si decides extraerlos en video en el futuro
+                            ax_save.arrow(x_rob, y_rob, cx, cy, head_width=0.04, head_length=0.06, fc='orange', ec='orange', alpha=0.8, length_includes_head=True, zorder=7)
+                            ax_save.plot(x_rob + cx, y_rob + cy, marker='X', markersize=6, color='orange', markeredgewidth=1, zorder=7)
+                    elif mode == 4:
+                        if len(extras) >= 2:
+                            fx, fy = extras[0], extras[1]
+                            ax_save.arrow(x_rob, y_rob, fx, fy, head_width=0.04, head_length=0.06, fc='red', ec='red', alpha=0.9, linewidth=2, length_includes_head=True, zorder=7)
 
                 sorted_names = sorted(accum.keys())
                 x_margin, y_margin = (args.xmax - args.xmin) * 0.02, (args.ymax - args.ymin) * 0.02
