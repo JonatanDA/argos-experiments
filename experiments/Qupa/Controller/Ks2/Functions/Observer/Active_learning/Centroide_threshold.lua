@@ -58,7 +58,7 @@ function ActiveLearning.process(obs_ang_offset_global, updated_anterior_indices)
         if Print_tracker_trayectory_data then
             local ang_total_cent = centroid_angle_rad + obs_ang_offset_global
             local cgx, cgy = math_helper.polarACartesianoPAR(centroid_dist, ang_total_cent)
-            Print_tracker_trayectory_data("Active_learning", 1, "Qupa4", 0, 0, cgx/100, cgy/100)
+            Print_tracker_trayectory_data("Active_learning", 2, "Qupa4", 0, 0, cgx/100, cgy/100)
         end
 
         if AL_LOG_MODE == 2 then

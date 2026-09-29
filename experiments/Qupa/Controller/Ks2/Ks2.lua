@@ -1,5 +1,5 @@
 --=============================================
---   MEJORAS :  -- 
+--   MEJORAS :  -- Active learning: Centroide basico, Centroide con threshold, centroide + pid, Fuerzas virtuales.
 --=============================================
 -------------------------------------------------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------------------------------------------------
@@ -38,7 +38,7 @@ speed_dem   = 10*factor_vel       --
 speed_dem_g = (speed_dem/2)       -- 
 
 d_speed     = 30                  -- velocidad en linea recta del apprentice
-g_speed     = 70                  -- Velocidad de giro deñ apprentice
+g_speed     = 80                  -- Velocidad de giro del apprentice
 
 ------------------------------
 -- Modelos
@@ -270,8 +270,13 @@ AL_LOG_MODE         = 0 -- 0: Sin logs, 1: Información sobre el Active Learning
 --     end
 -- end
 
--- function Print_tracker_AL_PID(target, actual, output)
---     print(string.format("[PID];%.4f;%.4f;%.4f", target, actual, output))
+-- function Print_tracker_AL_PID(target, actual, control_vars)
+--     local str = string.format("[PID];%.4f;%.4f", target, actual)
+--     -- Recorremos la tabla para agregar cada variable con su nombre (ej: ;out_speed_d=30.0)
+--     for name, value in pairs(control_vars) do
+--         str = str .. string.format(";%s=%.4f", name, value)
+--     end
+--     print(str)
 -- end
 
 -- function Print_tracker_calidad_imitacion_data(linea_resumen, is_master)
@@ -372,7 +377,7 @@ timer = 1
 function step()
 
     if robot.id == "Qupa4" and 
-        ( evaluator_ruido or Print_tracker_trayectory_data or Print_tracker_paciencia) then 
+        ( evaluator_ruido or Print_tracker_trayectory_data or Print_tracker_paciencia or Print_tracker_AL_PID) then 
             print("Timer="..timer) 
     end
 
@@ -630,8 +635,8 @@ ParameterStorage                = require("Functions.Observer.Parameter_Storage"
 GlobalTrajectoryReconstructor   = require("Functions.Observer.Global_Trajectory_Reconstructor")
 
 -- ActiveLearning                  = require("Functions.Observer.Active_learning.Centroide_basic")
-ActiveLearning                  = require("Functions.Observer.Active_learning.Centroide_threshold")
--- ActiveLearning                  = require("Functions.Observer.Active_learning.Centroide_PID")
+-- ActiveLearning                  = require("Functions.Observer.Active_learning.Centroide_threshold")
+ActiveLearning                  = require("Functions.Observer.Active_learning.Centroide_PID")
 -- ActiveLearning                  = require("Functions.Observer.Active_learning.CamposVectoriales")
 -- ActiveLearning                  = require("Functions.Observer.Active_learning.Estatico")
 ENABLE_ACTIVE_LEARNING          = true
@@ -891,7 +896,12 @@ function store_relative_positions()
             current_wait_ticks = 0
         end
 
-        move(last_motion_marker[1], last_motion_marker[2], d_speed, 80, false, robot.id, obs_stop_flag)
+        -- Extraemos las velocidades dinámicas (si el módulo no las envía, usamos las máximas por defecto)
+        local dyn_sd = last_motion_marker[3] or d_speed
+        local dyn_sg = last_motion_marker[4] or g_speed
+
+        move(last_motion_marker[1], last_motion_marker[2], dyn_sd, dyn_sg, false, robot.id, obs_stop_flag)
+
     else
         current_wait_ticks = 0 
     end
