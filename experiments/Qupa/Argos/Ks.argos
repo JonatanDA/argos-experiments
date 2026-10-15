@@ -3,7 +3,7 @@
     <framework>
         <experiment 
             length="5000" 
-            ticks_per_second="10" 
+            ticks_per_second="4" 
             />
         <system threads="0"/>
     </framework>
@@ -37,7 +37,12 @@
             <sensors>
                 <qupa_proximity implementation="default" show_rays="true"/>
                 <positioning implementation="default"/>
-                <colored_blob_omnidirectional_camera implementation="rot_z_only" medium="leds" show_rays="true"/>
+                <!-- Desviación estándar de 0.05 (5% de error proporcional a la distancia) -->
+                <colored_blob_omnidirectional_camera implementation="rot_z_only" 
+                                                    medium="leds" 
+                                                    show_rays="true" 
+                                                    noise_std_dev="0.0" />
+
                 <range_and_bearing implementation="medium" medium="rab"/>
                 <qupa_motor_ground implementation="rot_z_only"/>
                 <qupa_base_ground implementation="rot_z_only" />
@@ -114,8 +119,8 @@
         </qupa>  
 
 
-        <qupa id="Qupa4" omnidirectional_camera_aperture="72">
-            <body position="0.0,-0,0" orientation="0,0,0" />
+        <qupa id="Qupa4" omnidirectional_camera_aperture="72.1">
+            <body position="0.180,-0,0" orientation="0,0,0" />
             <controller config="lua_obs"/>
         </qupa> 
         

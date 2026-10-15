@@ -37,8 +37,13 @@
             <sensors>
                 <qupa_proximity implementation="default" show_rays="true"/>
                 <positioning implementation="default"/>
-                <colored_blob_omnidirectional_camera implementation="rot_z_only" medium="leds" show_rays="true"/>
-                <range_and_bearing implementation="medium" medium="rab"/>
+                <!-- Desviación estándar de 0.05 (5% de error proporcional a la distancia) -->
+                <colored_blob_omnidirectional_camera implementation="rot_z_only" 
+                                                    medium="leds" 
+                                                    show_rays="false" 
+                                                    noise_std_dev="0.00" />
+
+                 <range_and_bearing implementation="medium" medium="rab"/>
                 <qupa_motor_ground implementation="rot_z_only"/>
                 <qupa_base_ground implementation="rot_z_only" />
             </sensors>
@@ -46,6 +51,7 @@
         </lua_controller>
 
     </controllers>
+
 
     <arena size="3,3,3" center="0,0,0.5">
 
@@ -75,11 +81,35 @@
         <body position="-1.5,0,0" orientation="0,0,0"/>
         </box>
 
-        <qupa id="Qupa0"><body position="1.00,0.00,0" orientation="45,0,0"/><controller config="lua"/></qupa>
+        <!-- <qupa id="Qupa0"><body position="1.00,0.00,0" orientation="45,0,0"/><controller config="lua"/></qupa>
         <qupa id="Qupa1"><body position="-0.50,0.87,0" orientation="-90,0,0"/><controller config="lua"/></qupa>
-        <qupa id="Qupa2"><body position="-0.50,-0.87,0" orientation="0,0,0"/><controller config="lua"/></qupa>
+        <qupa id="Qupa2"><body position="-0.50,-0.87,0" orientation="0,0,0"/><controller config="lua"/></qupa> -->
 
-        <qupa id="Qupa4" omnidirectional_camera_aperture="81.8">
+        <qupa id="Qupa0"><body position="-0.30,0.00,0" orientation="0,0,0"/><controller config="lua"/></qupa>
+        <!-- <qupa id="Qupa1"><body position="-0.20,0.35,0" orientation="0,0,0"/><controller config="lua"/></qupa>
+        <qupa id="Qupa2"><body position="-0.20,-0.35,0" orientation="0,0,0"/><controller config="lua"/></qupa> -->
+        
+        <!-- Distribución circular -->
+        <!-- <qupa id="Qupa0"><body position="0.70,0.00,0" orientation="0,0,0"/><controller config="lua"/></qupa>
+        <qupa id="Qupa1"><body position="0.49,0.49,0" orientation="0,0,0"/><controller config="lua"/></qupa>
+        <qupa id="Qupa2"><body position="0.00,0.70,0" orientation="0,0,0"/><controller config="lua"/></qupa>
+        <qupa id="Qupa3"><body position="-0.49,0.49,0" orientation="0,0,0"/><controller config="lua"/></qupa>
+        <qupa id="Qupa5"><body position="-0.70,0.00,0" orientation="0,0,0"/><controller config="lua"/></qupa>
+        <qupa id="Qupa6"><body position="-0.49,-0.49,0" orientation="0,0,0"/><controller config="lua"/></qupa>
+        <qupa id="Qupa7"><body position="-0.00,-0.70,0" orientation="0,0,0"/><controller config="lua"/></qupa>
+        <qupa id="Qupa8"><body position="0.49,-0.49,0" orientation="0,0,0"/><controller config="lua"/></qupa> -->
+
+        <!-- Distribución cuadrada -->
+        <!-- <qupa id="Qupa0"><body position="0.70,0.70,0" orientation="0,0,0"/><controller config="lua"/></qupa>
+        <qupa id="Qupa1"><body position="0.00,0.70,0" orientation="0,0,0"/><controller config="lua"/></qupa>
+        <qupa id="Qupa2"><body position="-0.70,0.70,0" orientation="0,0,0"/><controller config="lua"/></qupa>
+        <qupa id="Qupa3"><body position="-0.70,0.00,0" orientation="0,0,0"/><controller config="lua"/></qupa>
+        <qupa id="Qupa5"><body position="-0.70,-0.70,0" orientation="0,0,0"/><controller config="lua"/></qupa>
+        <qupa id="Qupa6"><body position="0.00,-0.70,0" orientation="0,0,0"/><controller config="lua"/></qupa>
+        <qupa id="Qupa7"><body position="0.70,-0.70,0" orientation="0,0,0"/><controller config="lua"/></qupa>
+        <qupa id="Qupa8"><body position="0.70,0.00,0" orientation="0,0,0"/><controller config="lua"/></qupa> -->
+
+        <qupa id="Qupa4" omnidirectional_camera_aperture="70.71">
             <body position="0.0,-0,0" orientation="0,0,0" />
             <controller config="lua_obs"/>
         </qupa> 

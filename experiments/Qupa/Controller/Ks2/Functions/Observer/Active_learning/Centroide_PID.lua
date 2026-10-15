@@ -3,34 +3,21 @@
 -- ============================================================================
 
 -- [Kp] PROPORCIONAL: Reacción al error presente. 
--- * Si lo subes (ej. 1.5): El robot reaccionará más agresivamente, saltando rápido hacia el centroide.
--- * Si lo bajas (ej. 0.3): El robot será perezoso y tardará más en seguir al grupo.
-Kp = 1.5                   
+Kp = 0.8                   
 
 -- [Ki] INTEGRAL: Memoria del error pasado (vence la fricción o errores constantes).
--- * Si lo subes (ej. 0.1): Acumulará memoria muy rápido. Si el centroide se mueve lejos, el robot acumulará tanta "frustración" que cuando por fin arranque, saldrá disparado y se pasará de la marca (Windup).
--- * Si lo bajas (ej. 0.001): Será casi ignorado. Úsalo muy bajo (0.01 está bien) solo para ayudar a llegar al centroide si el robot se queda corto por milímetros.
-Ki = 0.1                  
+Ki = 0.01                  
 
 -- [Kd] DERIVATIVO: Predicción y frenado (analiza qué tan rápido cambia el error).
--- * Si lo subes (ej. 0.5): El robot amortiguará mucho su llegada, frenando antes de llegar. Excelente para evitar oscilar, pero si la cámara tiene ruido, el robot temblará mucho (el derivativo odia el ruido).
--- * Si lo bajas (ej. 0.0): Quitas el freno. El robot puede sobrepasar el centroide y tener que devolverse.
 Kd = 0.1                   
 
 -- [target_centroid_distance] REFERENCIA (Setpoint).
--- * 0.0 significa que el robot quiere estar en el centro exacto de la masa del enjambre.
--- * Si pones 20.0, el robot intentará orbitar a los maestros manteniendo una distancia de 20cm del centro.
 target_centroid_distance = 0.0  
 
 -- [pid_tolerance] ZONA MUERTA (Deadband).
--- * Rango en cm donde el PID se apaga. 2.0 significa que si el centroide está a 1.9 cm, el robot no hace nada. 
--- * Evita que el robot vibre infinitamente intentando corregir 1 milímetro.
-pid_tolerance = 15.0             
+pid_tolerance = 10.0             
 
 -- [max_pid_output / min_pid_output] LÍMITES DE SATURACIÓN DE LA DISTANCIA (No velocidad).
--- * Estas variables limitan matemáticamente el tamaño de la DISTANCIA calculada (el paso espacial).
--- * Si el PID calcula un error gigantesco de 500cm, lo limitamos a max_pid_output (ej. 30.0 cm) 
---   para no saturar el integrador ni dar órdenes de viaje irreales en un solo tick.
 max_pid_output = 100.0           
 min_pid_output = 0.0            
 
@@ -93,110 +80,76 @@ function ActiveLearning.process(obs_ang_offset_global, updated_anterior_indices)
         local centroid_dist, centroid_angle_rad = math_helper.cartesianoAPolarPAR(smooth_x, smooth_y)
         local centroid_angle = centroid_angle_rad * (180 / math.pi)
 
-        -- Variables internas para recopilar lo que enviaremos al Python Tracker
         local out_pid_dist = 0
         local out_speed_d = 0
         local out_speed_g = 0
+        local do_move = false
 
-        if closest_master_dist < front_threshold and motion_active and al_current_state == "PERSIGUIENDO_CENTROIDE" then
-            srt_ang_mark_ant = normalize_angle_rad(move_angle + srt_ang_mark_ant)
-            x_ant_r = x_mark
-            y_ant_r = y_mark
-            motion_active = false
-            r_move()  
-            robot.wheels.set_velocity(0, 0)
-            change_al_state("IDLE", "") 
-            pid_error_integral = 0      
+        -- Limpieza del integrador si el robot principal va a entrar en evasión visual
+        if closest_master_dist < front_threshold then
+            pid_error_integral = 0
         end
 
-        if not motion_active then
-            if closest_master_dist < front_threshold then
-                motion_active = true
-                pid_error_integral = 0  
-                
-                local diff_ang = centroid_angle - angle_of_closest
-                if diff_ang > 180 then diff_ang = diff_ang - 360 end
-                if diff_ang < -180 then diff_ang = diff_ang + 360 end
-                local safe_angle = 0
-                local msg_evasion = ""
-                if math.abs(diff_ang) < 60 then 
-                    if diff_ang >= 0 then safe_angle = angle_of_closest + 60 
-                    else safe_angle = angle_of_closest - 60 end
-                    msg_evasion = string.format("EVADIENDO MASTER | Rodeando obstáculo hacia %.1f°", safe_angle)
-                else
-                    safe_angle = centroid_angle
-                    msg_evasion = string.format("EVADIENDO MASTER | Ruta libre hacia %.1f°", safe_angle)
-                end
-                
-                -- EVASIÓN: Velocidad máxima requerida por seguridad
-                out_speed_d = d_speed
-                out_speed_g = g_speed
-                
-                last_motion_marker = {back_threshold * porcentaje, safe_angle, out_speed_d, out_speed_g}
-                change_al_state("EVADIENDO_MASTER", msg_evasion)
-                r_move()
-            else
-                local error_dist = centroid_dist - target_centroid_distance
-                local pid_output = 0
+        local error_dist = centroid_dist - target_centroid_distance
 
-                if math.abs(error_dist) > pid_tolerance then
-                    local p_term = Kp * error_dist
-                    pid_error_integral = pid_error_integral + error_dist
-                    local i_term = Ki * pid_error_integral
-                    local d_term = Kd * (error_dist - pid_last_error)
-                    pid_last_error = error_dist
-                    
-                    pid_output = p_term + i_term + d_term
-                    
-                    -- Saturamos la distancia a recorrer (Evita Windup Integrador)
-                    if pid_output > max_pid_output then pid_output = max_pid_output 
-                    elseif pid_output < min_pid_output then pid_output = min_pid_output end
-                    
-                    motion_active = true
-                    
-                    -- ===============================================================
-                    -- CÁLCULO DE VELOCIDADES DINÁMICAS (SATURADAS POR d_speed / g_speed)
-                    -- ===============================================================
-                    local global_d = d_speed or 30
-                    local global_g = g_speed or 80
-                    
-                    out_speed_d = math.min(global_d, math.max(5.0, math.abs(pid_output)))
-                    out_speed_g = math.min(global_g, math.max(10.0, math.abs(centroid_angle)))
-                    out_pid_dist = pid_output
-                    
-                    -- Enviamos: {Distancia, Ángulo, Vel_Lineal, Vel_Angular}
-                    last_motion_marker = {out_pid_dist, centroid_angle, out_speed_d, out_speed_g}
-                    
-                    change_al_state("PERSIGUIENDO_CENTROIDE", "PID")
-                    r_move()
-                else
-                    pid_error_integral = 0
-                end
+        if math.abs(error_dist) > pid_tolerance then
+            local p_term = Kp * error_dist
+            pid_error_integral = pid_error_integral + error_dist
+            local i_term = Ki * pid_error_integral
+            local d_term = Kd * (error_dist - pid_last_error)
+            pid_last_error = error_dist
+            
+            out_pid_dist = p_term + i_term + d_term
+            
+            -- Saturamos la distancia a recorrer (Evita Windup Integrador)
+            if out_pid_dist > max_pid_output then out_pid_dist = max_pid_output 
+            elseif out_pid_dist < min_pid_output then out_pid_dist = min_pid_output end
+            
+            -- CÁLCULO DE VELOCIDADES DINÁMICAS
+            local global_d = d_speed or 30
+            local global_g = g_speed or 80
+            
+            out_speed_d = math.min(global_d, math.max(5.0, math.abs(out_pid_dist)))
+            out_speed_g = math.min(global_g, math.max(10.0, math.abs(centroid_angle)))
+            
+            do_move = true
+        else
+            pid_error_integral = 0
+        end
 
-                if Print_tracker_AL_PID then 
-                    Print_tracker_AL_PID(target_centroid_distance, centroid_dist, {
-                        out_pid_dist = out_pid_dist,
-                        out_speed_d = out_speed_d,
-                        out_speed_g = out_speed_g
-                    }) 
-                end
-            end
+        -- LOGS Y TRACKER
+        if Print_tracker_AL_PID then 
+            Print_tracker_AL_PID(target_centroid_distance, centroid_dist, {
+                out_pid_dist = out_pid_dist,
+                out_speed_d = out_speed_d,
+                out_speed_g = out_speed_g
+            }) 
         end
 
         -- >>> ENVÍO DE DATOS AL TRACKER PYTHON DE TRAYECTORIA <<<
-        -- Movemos esto al final para asegurar que las variables de control contengan los valores exactos calculados
         if Print_tracker_trayectory_data then
             local ang_total_cent = centroid_angle_rad + obs_ang_offset_global
             local cgx, cgy = math_helper.polarACartesianoPAR(centroid_dist, ang_total_cent)
             
             -- Enviamos el Modo 3 junto con cgx, cgy, Y LAS 3 VARIABLES EXTRAS para python
-            Print_tracker_trayectory_data("Active_learning", 3, "Qupa4", 0, 0, cgx/100, cgy/100)
-            
+            Print_tracker_trayectory_data("Active_learning", 3, "Qupa4", 0, 0, cgx/100, cgy/100, out_pid_dist, out_speed_d, out_speed_g)
         end
 
+        return {
+            should_move   = do_move,
+            target_dist   = out_pid_dist,
+            target_angle  = centroid_angle,
+            speed_d       = out_speed_d,
+            speed_g       = out_speed_g,
+            closest_dist  = closest_master_dist,
+            closest_angle = angle_of_closest,
+            state_name    = "PERSIGUIENDO_CENTROIDE",
+            state_msg     = "PID"
+        }
     else
         history_x = {}
         history_y = {}
+        return nil
     end
 end
 

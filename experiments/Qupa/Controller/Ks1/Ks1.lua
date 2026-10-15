@@ -51,10 +51,10 @@ MAX_PATIENCE            = 160 * ticks_per_second       -- Tiempo máximo de espe
 BASE_RESTORE            = 20  * ticks_per_second       -- Paciencia base a restaurar con datos refinados/actualizados en segundos
 
 -- Métricas del modelo de ActiveLearning
-back_threshold          = 25      -- Distancia que retrocede el apprentice para evitar colisión. cm.
-front_threshold         = 25      -- Limite de distancia minima entre un objeto detectado y el apprentice para entrar a evadirlo
-max_tracking_distance   = 25      -- Máxima distancia a la que se puede alejar el centroide antes de que el apprentice se acerque para no perder de vista. cm
-porcentaje              = 0.75    -- 1 < porcentaje < 0.33 , indica que tanto el apprentice busca acercarse al maestro cuando este cruza el max_tracking_distance.
+back_threshold          = 15      -- Distancia que retrocede el apprentice para evitar colisión. cm.
+front_threshold         = 15      -- Limite de distancia minima entre un objeto detectado y el apprentice para entrar a evadirlo
+max_tracking_distance   = 25      -- Máxima distancia a la que se puede alejar el centroide antes de que el apprentce se acerque para no perder de vista. cm
+porcentaje              = 1.00    -- 1 < porcentaje < 0.33 , indica que tanto el apprentice busca alejarse del maestro cuando este cruza el max_tracking_distance.
 
 ------------------------------
 -- Módulos
@@ -195,7 +195,7 @@ end
 -- Banderas de loggeo
 SRP_LOG_MODE        = 1 -- 0: Sin logs, 1: Parámetros obtenidos tras finalizar la observación de un maestro. 2. Paso a paso de la actualización de maestros, 3: Imprime todo.
 UP_LOG_MODE         = 1 -- 0: Sin logs, 1: Información sobre la paciencia (Tiempo que el apprentice actualiza para continuar o deter su aprendizaje) 
-AL_LOG_MODE         = 0 -- 0: Sin logs, 1: Información sobre el Active Learning, 2: Información detallada del Active Learning, 3: Estados del active learning
+AL_LOG_MODE         = 2 -- 0: Sin logs, 1: Información sobre el Active Learning, 2: Información detallada del Active Learning, 3: Estados del active learning
 -------------------------------------------------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------------------------------------------------
@@ -636,8 +636,8 @@ GlobalTrajectoryReconstructor   = require("Functions.Observer.Global_Trajectory_
 
 -- ActiveLearning                  = require("Functions.Observer.Active_learning.Centroide_basic")
 -- ActiveLearning                  = require("Functions.Observer.Active_learning.Centroide_threshold")
-ActiveLearning                  = require("Functions.Observer.Active_learning.Centroide_PID")
--- ActiveLearning                  = require("Functions.Observer.Active_learning.CamposVectoriales")
+-- ActiveLearning                  = require("Functions.Observer.Active_learning.Centroide_PID")
+ActiveLearning                  = require("Functions.Observer.Active_learning.CamposVectoriales")
 -- ActiveLearning                  = require("Functions.Observer.Active_learning.Estatico")
 ENABLE_ACTIVE_LEARNING          = true
 AL_SMOOTH_TICKS                 = 4           -- Cantidad de ticks a recordar (tamaño del buffer)
@@ -849,6 +849,7 @@ function store_relative_positions()
     check_patience_and_reconstruct()
 
     local proximity = proximidad()
+    log("Proximidad: " .. string.format("%.2f", proximity[1]).."\n")
     if proximity[1] < 1 then srt_c1 = 0 else
         if srt_c1 == 5 * ticks_per_second then resetOBS() return end
         srt_c1 = srt_c1 + 1
@@ -860,11 +861,14 @@ function store_relative_positions()
     -- =========================================================================
     -- FASE 0: EJECUCIÓN DE ODOMETRÍA, OBSTÁCULOS Y SUPERVIVENCIA (SP)
     -- =========================================================================
+
+    -- Distribucion_sensores_de_proximidad = {0,-45,45,-90, 90,180}    -- Ángulos de los sensores de proximidad a considerar para la detección de obstáculos (en grados) --> {} o "uniformes"
+
     if motion_active then
         local prox_data = proximidad() 
         obs_stop_flag = false
 
-        local is_object_critical = (prox_data[1] > 0.8)
+        local is_object_critical = (prox_data[1] > 0.9)
         local evadiendo_hacia_atras = (last_motion_marker[1] < 0)
 
         if is_object_critical then

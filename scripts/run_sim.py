@@ -114,8 +114,8 @@ TRACKER_DEPENDENCIES = {
 # DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Tr.argos"
 # DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Tr7/Tr7.lua"
 
-DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Ks.argos"
-DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Ks1/Ks1.lua"
+DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Ks_A.argos"
+DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Ks3/Ks3.lua"
 
 # DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Prueba1.argos"
 # DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Pruebas/Move.lua"
@@ -127,14 +127,14 @@ TRACKERS = [
         "script": "scripts/tracker_trayectory.py",
         "args": []
     },
-    # {
-    #     "script": "scripts/tracker_paciencia.py",
-    #     "args": []
-    # },
     {
-        "script": "scripts/tracker_AL_PID.py",
+        "script": "scripts/tracker_paciencia.py",
         "args": []
     },
+    # {
+    #     "script": "scripts/tracker_AL_PID.py",
+    #     "args": []o
+    # },
     {
         "script": "scripts/tracker_calidad_imitacion.py",
         "args": []
@@ -160,7 +160,7 @@ TRACKERS = [
 # =============================================================================
 # ---------- CONFIGURACIÓN DE VISUALIZACIÓN E INTERFAZ ----------
 # =============================================================================
-ENABLE_VISUALIZATION            = False              # True: Muestra la ventana de ARGoS, False: Headless (sin GUI)
+ENABLE_VISUALIZATION            = True              # True: Muestra la ventana de ARGoS, False: Headless (sin GUI)
 
 # --- Control de Pantalla Virtual (Xvfb) ---
 USE_XVFB_VIRTUAL_DISPLAY        = False
@@ -481,7 +481,7 @@ def main():
 
         broadcaster.join()
 
-        print_log(f"\n[+] Esperando a que los trackers finalicen sus tareas (Timeout: {MAX_IDLE_TIMEOUT_SEC}s)...", 1, actual_nivel_log)
+        print_log(f"[+] Esperando a que los trackers finalicen sus tareas (Timeout: {MAX_IDLE_TIMEOUT_SEC}s)...", 1, actual_nivel_log)
 
         while tracker_procs:
             for p in list(tracker_procs):

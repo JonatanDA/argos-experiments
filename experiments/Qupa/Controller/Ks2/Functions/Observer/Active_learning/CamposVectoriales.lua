@@ -87,62 +87,33 @@ function ActiveLearning.process(obs_ang_offset_global, updated_anterior_indices)
             log(string.format("[ACTIVE LEARNING] FuerzaRes(%.1f) | Ang: %.1f° | Activos: %d | Cerca: %.1f cm", resultant_force, resultant_angle, active_count, closest_master_dist))
         end
 
-        if closest_master_dist < front_threshold and motion_active and al_current_state == "SIGUIENDO_FUERZAS" then
-            srt_ang_mark_ant = normalize_angle_rad(move_angle + srt_ang_mark_ant)
-            x_ant_r = x_mark
-            y_ant_r = y_mark
-            motion_active = false
-            r_move()  
-            robot.wheels.set_velocity(0, 0)
-            change_al_state("IDLE", "") 
-        end
-
-        if not motion_active then
-            if closest_master_dist < front_threshold then
-                motion_active = true
-                local diff_ang = resultant_angle - angle_of_closest
-                if diff_ang > 180 then diff_ang = diff_ang - 360 end
-                if diff_ang < -180 then diff_ang = diff_ang + 360 end
-                local safe_angle = 0
-                local msg_evasion = ""
-                if math.abs(diff_ang) < 60 then 
-                    if diff_ang >= 0 then safe_angle = angle_of_closest + 60
-                    else safe_angle = angle_of_closest - 60 end
-                    msg_evasion = string.format("EVADIENDO MASTER | Rodeando obstáculo hacia %.1f° | Dist: %.1f cm", safe_angle, closest_master_dist)
-                else
-                    safe_angle = resultant_angle
-                    msg_evasion = string.format("EVADIENDO MASTER | Ruta resultante libre (%.1f°) | Dist: %.1f cm", safe_angle, closest_master_dist)
-                end
-                
-                -- EVASIÓN: Velocidad máxima
-                last_motion_marker = {back_threshold * porcentaje, safe_angle, d_speed, g_speed}
-                change_al_state("EVADIENDO_MASTER", msg_evasion)
-                r_move()
-            elseif resultant_force > MIN_FORCE_THRESHOLD then
-                motion_active = true
-                local move_dist = resultant_force 
-                if move_dist > (max_tracking_distance * 2) then move_dist = (max_tracking_distance * 2) end
-                
-                -- ===============================================================
-                -- CÁLCULO DE VELOCIDADES DINÁMICAS (SATURADAS)
-                -- ===============================================================
-                local global_d = d_speed or 30
-                local global_g = g_speed or 80
-                
-                local dyn_speed_d = math.min(global_d, math.max(5.0, math.abs(move_dist)))
-                local dyn_speed_g = math.min(global_g, math.max(10.0, math.abs(resultant_angle)))
-                
-                -- Enviamos: {Distancia, Ángulo, Vel_Lineal, Vel_Angular}
-                last_motion_marker = {move_dist * porcentaje, resultant_angle, dyn_speed_d, dyn_speed_g}
-                
-                local msg_perseguir = string.format("SIGUIENDO FUERZAS | Magnitud: %.1f | Ángulo: %.1f°", resultant_force, resultant_angle)
-                change_al_state("SIGUIENDO_FUERZAS", msg_perseguir)
-                r_move()
-            end
-        end
+        local move_dist = resultant_force 
+        if move_dist > (max_tracking_distance * 2) then move_dist = (max_tracking_distance * 2) end
+        
+        -- CÁLCULO DE VELOCIDADES DINÁMICAS (SATURADAS)
+        local global_d = d_speed or 30
+        local global_g = g_speed or 80
+        
+        local dyn_speed_d = math.min(global_d, math.max(5.0, math.abs(move_dist)))
+        local dyn_speed_g = math.min(global_g, math.max(10.0, math.abs(resultant_angle)))
+        
+        local msg_perseguir = string.format("SIGUIENDO FUERZAS | Magnitud: %.1f | Ángulo: %.1f°", resultant_force, resultant_angle)
+        
+        return {
+            should_move   = (resultant_force > MIN_FORCE_THRESHOLD),
+            target_dist   = move_dist,
+            target_angle  = resultant_angle,
+            speed_d       = dyn_speed_d,
+            speed_g       = dyn_speed_g,
+            closest_dist  = closest_master_dist,
+            closest_angle = angle_of_closest,
+            state_name    = "SIGUIENDO_FUERZAS",
+            state_msg     = msg_perseguir
+        }
     else
         history_x = {}
         history_y = {}
+        return nil
     end
 end
 

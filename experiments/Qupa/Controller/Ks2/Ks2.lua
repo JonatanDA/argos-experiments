@@ -1,5 +1,5 @@
 --=============================================
---   MEJORAS :  -- Active learning: Centroide basico, Centroide con threshold, centroide + pid, Fuerzas virtuales.
+--   MEJORAS :  -- Modulos de active learning mejorados y optimizados.
 --=============================================
 -------------------------------------------------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------------------------------------------------
@@ -21,7 +21,7 @@
 -- 187014    semilla 1er exp. FOOT
 math.randomseed(os.time())
 
-ticks_per_second                    = 10                        -- Número de ticks que representa un segundo en la simulación (ajusta según la configuración de .argos)
+ticks_per_second                    = 2                         -- Número de ticks que representa un segundo en la simulación (ajusta según la configuración de .argos)
 max_time                            = 5000 * ticks_per_second   -- Duración máxima de la simulación en ticks
 Distribucion_sensores_de_proximidad = {0,-45,45,-90, 90,180}    -- Ángulos de los sensores de proximidad a considerar para la detección de obstáculos (en grados) --> {} o "uniformes"
 --Distribucion_sensores_de_proximidad = "uniform"               -- Ángulos de los sensores de proximidad a considerar para la detección de obstáculos (en grados) --> {} o "uniformes"
@@ -51,17 +51,17 @@ MAX_PATIENCE            = 160 * ticks_per_second       -- Tiempo máximo de espe
 BASE_RESTORE            = 20  * ticks_per_second       -- Paciencia base a restaurar con datos refinados/actualizados en segundos
 
 -- Métricas del modelo de ActiveLearning
-back_threshold          = 25      -- Distancia que retrocede el apprentice para evitar colisión. cm.
-front_threshold         = 25      -- Limite de distancia minima entre un objeto detectado y el apprentice para entrar a evadirlo
-max_tracking_distance   = 25      -- Máxima distancia a la que se puede alejar el centroide antes de que el apprentice se acerque para no perder de vista. cm
-porcentaje              = 0.75    -- 1 < porcentaje < 0.33 , indica que tanto el apprentice busca acercarse al maestro cuando este cruza el max_tracking_distance.
+back_threshold          = 15      -- Distancia que retrocede el apprentice para evitar colisión. cm.
+front_threshold         = 15      -- Limite de distancia minima entre un objeto detectado y el apprentice para entrar a evadirlo
+max_tracking_distance   = 25      -- Máxima distancia a la que se puede alejar el centroide antes de que el apprentce se acerque para no perder de vista. cm
+porcentaje              = 0.75    -- 1 < porcentaje < 0.33 , indica que tanto el apprentice busca alejarse del maestro cuando este cruza el max_tracking_distance.
 
 ------------------------------
 -- Módulos
 
 -- Métricas del módulo de ruido en camara de blobs del aprendiz: noise_manager.lua
 noise_cfg = {
-    ENABLE_NOISE            = true  ,    -- Si es false, el robot ve perfecto (Ground Truth)
+    ENABLE_NOISE            = false  ,    -- Si es false, el robot ve perfecto (Ground Truth)
     USE_DISTANCE_DEPENDENT  = true  ,    -- El ruido aumenta si el objeto está lejos
     USE_OUTLIERS            = false ,    -- Activar lecturas "fantasma" o fallos graves
     USE_BIAS                = true  ,    -- Error sistemático (ej. sensor mal calibrado +2cm siempre)
@@ -193,8 +193,8 @@ end
 
 ------------------------------
 -- Banderas de loggeo
-SRP_LOG_MODE        = 1 -- 0: Sin logs, 1: Parámetros obtenidos tras finalizar la observación de un maestro. 2. Paso a paso de la actualización de maestros, 3: Imprime todo.
-UP_LOG_MODE         = 1 -- 0: Sin logs, 1: Información sobre la paciencia (Tiempo que el apprentice actualiza para continuar o deter su aprendizaje) 
+SRP_LOG_MODE        = 0 -- 0: Sin logs, 1: Parámetros obtenidos tras finalizar la observación de un maestro. 2. Paso a paso de la actualización de maestros, 3: Imprime todo.
+UP_LOG_MODE         = 0 -- 0: Sin logs, 1: Información sobre la paciencia (Tiempo que el apprentice actualiza para continuar o deter su aprendizaje) 
 AL_LOG_MODE         = 0 -- 0: Sin logs, 1: Información sobre el Active Learning, 2: Información detallada del Active Learning, 3: Estados del active learning
 -------------------------------------------------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------------------------------------------------
@@ -240,6 +240,7 @@ AL_LOG_MODE         = 0 -- 0: Sin logs, 1: Información sobre el Active Learning
 --         local k, x, y, logging = p2, p3, p4, p5
 --         if type(k) == "number" then
 --             print("[trajectory];Master" .. k .. ";" .. x .. ";" .. y)
+--             logging = false
 --             if logging then log("[trajectory];Master" .. k .. ";" .. x .. ";" .. y) end
 --         elseif type(k) == "string" then
 --             local rx = robot.positioning.position.x
@@ -347,7 +348,8 @@ AL_LOG_MODE         = 0 -- 0: Sin logs, 1: Información sobre el Active Learning
 -- end
 
 -- function evaluator_ruido (raw_angle, raw_dist, noisy_angle, noisy_dist)
---     print("[EVALUATOR_RUIDO]Blob perfecto: angulo = " .. raw_angle .. ", distancia = " .. raw_dist)
+--     print("[EVALUATOR_RUIDO]Blob : angulo = " .. raw_angle .. ", distancia = " .. raw_dist)
+--     --log("\n[EVALUATOR]Blob perfecto: angulo = " .. raw_angle .. ", distancia = " .. raw_dist)
 --     print("[EVALUATOR_RUIDO]Blob ruidoso : angulo = " .. noisy_angle .. ", distancia = " .. noisy_dist)
 -- end
 
@@ -568,7 +570,7 @@ function Ejecutar_comportamiento(params_P)
     -- =========================================================================
     if SMART_MASTERS and robot.id ~= "Qupa4" then
         -- Si hay un obstáculo cerca en el cono frontal
-        if prox[1] > 0.8 then 
+        if prox[1] == 1 and ( math.abs(prox[2]) <= 45 ) then 
             master_paused = true
             -- setleds("red") -- Opcional: Indicador de pausa por obstáculo
         end
@@ -636,8 +638,8 @@ GlobalTrajectoryReconstructor   = require("Functions.Observer.Global_Trajectory_
 
 -- ActiveLearning                  = require("Functions.Observer.Active_learning.Centroide_basic")
 -- ActiveLearning                  = require("Functions.Observer.Active_learning.Centroide_threshold")
-ActiveLearning                  = require("Functions.Observer.Active_learning.Centroide_PID")
--- ActiveLearning                  = require("Functions.Observer.Active_learning.CamposVectoriales")
+-- ActiveLearning                  = require("Functions.Observer.Active_learning.Centroide_PID")
+ActiveLearning                  = require("Functions.Observer.Active_learning.CamposVectoriales")
 -- ActiveLearning                  = require("Functions.Observer.Active_learning.Estatico")
 ENABLE_ACTIVE_LEARNING          = true
 AL_SMOOTH_TICKS                 = 4           -- Cantidad de ticks a recordar (tamaño del buffer)
@@ -849,10 +851,13 @@ function store_relative_positions()
     check_patience_and_reconstruct()
 
     local proximity = proximidad()
-    if proximity[1] < 1 then srt_c1 = 0 else
-        if srt_c1 == 5 * ticks_per_second then resetOBS() return end
-        srt_c1 = srt_c1 + 1
-    end
+    --log("Proximidad: " .. string.format("%.2f", proximity[1]).."\n")
+    -- if proximity[1] < 1 then 
+    --     srt_c1 = 0 
+    -- else
+    --     if srt_c1 == 5 * ticks_per_second then resetOBS() return end
+    --     srt_c1 = srt_c1 + 1
+    -- end
 
     Temporizador_1(20) 
     if temp == false then robot.leds.set_all_colors("black") end
@@ -860,11 +865,14 @@ function store_relative_positions()
     -- =========================================================================
     -- FASE 0: EJECUCIÓN DE ODOMETRÍA, OBSTÁCULOS Y SUPERVIVENCIA (SP)
     -- =========================================================================
+
+    -- Distribucion_sensores_de_proximidad = {0,-45,45,-90, 90,180}    -- Ángulos de los sensores de proximidad a considerar para la detección de obstáculos (en grados) --> {} o "uniformes"
+
     if motion_active then
         local prox_data = proximidad() 
         obs_stop_flag = false
 
-        local is_object_critical = (prox_data[1] > 0.8)
+        local is_object_critical = (prox_data[1] > 0.9)
         local evadiendo_hacia_atras = (last_motion_marker[1] < 0)
 
         if is_object_critical then
@@ -1053,7 +1061,60 @@ function store_relative_positions()
         -- FASE E: CÁLCULO Y DECISIÓN DE MOVIMIENTO (ACTIVE LEARNING MODULAR)
         -- =========================================================================
         if ActiveLearning and ActiveLearning.process then
-            ActiveLearning.process(obs_ang_offset_global, updated_anterior_indices)
+            -- El módulo ahora solo devuelve las matemáticas puras
+            local al_result = ActiveLearning.process(obs_ang_offset_global, updated_anterior_indices)
+            
+            if al_result then
+                -- 1. DETENER EL ROBOT SI ESTÁ EN MOVIMIENTO Y ALGUIEN ENTRA EN LA ZONA DE PÁNICO
+                if al_result.closest_dist < front_threshold and motion_active and al_current_state ~= "EVADIENDO_MASTER" then
+                    srt_ang_mark_ant = normalize_angle_rad(move_angle + srt_ang_mark_ant)
+                    x_ant_r = x_mark
+                    y_ant_r = y_mark
+                    motion_active = false
+                    r_move()  
+                    robot.wheels.set_velocity(0, 0)
+                    change_al_state("IDLE", "") 
+                end
+
+                -- 2. LÓGICA DE MOVIMIENTO (Evasión vs Persecución)
+                if not motion_active then
+                    -- CASO A: EVASIÓN VISUAL (Regla universal para todos los módulos)
+                    if al_result.closest_dist < front_threshold then
+                        motion_active = true
+                        
+                        local diff_ang = al_result.target_angle - al_result.closest_angle
+                        if diff_ang > 180 then diff_ang = diff_ang - 360 end
+                        if diff_ang < -180 then diff_ang = diff_ang + 360 end
+                        
+                        local safe_angle = 0
+                        local msg_evasion = ""
+                        
+                        -- Si el objetivo nos obliga a pasar a través del obstáculo, lo rodeamos (60°)
+                        if math.abs(diff_ang) < 60 then 
+                            if diff_ang >= 0 then safe_angle = al_result.closest_angle + 60
+                            else safe_angle = al_result.closest_angle - 60 end
+                            msg_evasion = string.format("EVADIENDO MASTER | Rodeando obstáculo hacia %.1f° | Dist: %.1f cm", safe_angle, al_result.closest_dist)
+                        else
+                            -- Si la ruta está libre, seguimos apuntando a nuestro objetivo pero retrocediendo
+                            safe_angle = al_result.target_angle
+                            msg_evasion = string.format("EVADIENDO MASTER | Ruta libre (%.1f°) | Dist: %.1f cm", safe_angle, al_result.closest_dist)
+                        end
+                        
+                        -- Evasión siempre usa velocidades máximas para escapar rápido
+                        last_motion_marker = {back_threshold * porcentaje, safe_angle, d_speed, g_speed}
+                        change_al_state("EVADIENDO_MASTER", msg_evasion)
+                        r_move()
+
+                    -- CASO B: PERSECUCIÓN NORMAL (Dictada por las reglas de cada módulo)
+                    elseif al_result.should_move then
+                        motion_active = true
+                        -- Usamos los cálculos exactos que dictó el módulo
+                        last_motion_marker = {al_result.target_dist * porcentaje, al_result.target_angle, al_result.speed_d, al_result.speed_g}
+                        change_al_state(al_result.state_name, al_result.state_msg)
+                        r_move()
+                    end
+                end
+            end
         end
 
         -- =========================================================================
@@ -1694,9 +1755,9 @@ function move(distance, target_angle, speed_d, speed_g, imprimir, name, stop)
     end
 end
 
-UMBRAL_INTENSIDAD_EVASION = 0.1   -- Sensibilidad para activar la evasión
-DURACION_TICKS_ARCO = 50          -- Duración en ticks del arco de evasión
-DEBUG_EVASION = 1                 -- 0: Nada, 1: Cambios de estado, 2: Sensores y estados continuos
+UMBRAL_INTENSIDAD_EVASION = 0.1             -- Sensibilidad para activar la evasión
+DURACION_TICKS_ARCO = 5 * ticks_per_second  -- Duración en ticks del arco de evasión
+DEBUG_EVASION = 2                           -- 0: Nada, 1: Cambios de estado, 2: Sensores y estados continuos
 
 local estado_evasion = {
     modo = "NORMAL",      -- "NORMAL", "GIRANDO", "ARCO"
@@ -1849,7 +1910,7 @@ function navegar_a_coordenadas(target_x, target_y, stop_distance)
         
     elseif estado_evasion.modo == "NORMAL" then
         local speed_straight = 50
-        local speed_turn_factor = 100 
+        local speed_turn_factor = 10 * ticks_per_second
         local max_wheel_speed = 100   
 
         if math.abs(angle_difference) < 0.1 then

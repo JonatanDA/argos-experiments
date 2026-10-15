@@ -39,8 +39,8 @@ PLOT_SUPERPUESTAS       = False                                    # (Aplica par
 # =============================================================================
 # ---------- CONFIGURACIÓN DE GUARDADO DE DATOS ----------
 # =============================================================================
-SAVE_IMAGES             = False                                    # True: Guarda capturas de las gráficas de comparación automáticamente
-IMAGE_DIR               = "Resultados/Robots/Qupa/Tr7/Pentagono/Calidad_Imitacion"    # (Aplica si SAVE_IMAGES=True) Directorio de guardado
+SAVE_IMAGES             = True                                    # True: Guarda capturas de las gráficas de comparación automáticamente
+IMAGE_DIR               = "Resultados/Robots/Qupa/Ks3/CamposVectoriales/octagono/Calidad_Imitacion"    # (Aplica si SAVE_IMAGES=True) Directorio de guardado
 
 # =============================================================================
 # ---------- CONFIGURACIÓN DEL TRACKER Y SISTEMA ----------
@@ -93,17 +93,21 @@ def parse_line(line):
         nums_split = raw_nums.split(',')
        
         try:
+            # === ORDEN CORREGIDO LECTURA DESDE LUA: (Angulo, Distancia) ===
             if len(nums_split) == 4:
-                dist = float(f"{nums_split[0]}.{nums_split[1]}")
-                ang = float(f"{nums_split[2]}.{nums_split[3]}")
+                ang = float(f"{nums_split[0]}.{nums_split[1]}")
+                dist = float(f"{nums_split[2]}.{nums_split[3]}")
             elif len(nums_split) == 2:
-                dist = float(nums_split[0])
-                ang = float(nums_split[1])
+                ang = float(nums_split[0])
+                dist = float(nums_split[1])
             else:
                 continue
                
             if current_name not in patterns_found:
                  patterns_found[current_name] = []
+            
+            # Se guarda internamente como (distancia, ángulo) para compatibilidad
+            # con el resto de la matemática del script.
             patterns_found[current_name].append((dist, ang))
            
         except ValueError:
@@ -125,6 +129,7 @@ def clean_vectors(vectors, is_original=False):
     # Separar segmentos iniciales con distancia 0.0
     leading_angle_sum = 0.0
     idx = 0
+    # En la tupla interna, índice 0 es Distancia, índice 1 es Ángulo
     while idx < len(vecs) and vecs[idx][0] == 0.0:
         leading_angle_sum += vecs[idx][1]
         idx += 1
@@ -180,44 +185,92 @@ def evaluate_against_reference(orig, imit):
     if No == 0 or Nc == 0: return imit, (0, 0, 0, 0)
    
     orig_healed = heal_pattern(orig)
-    imit_healed = heal_pattern(imit)
    
-    Nmin = min(No, Nc)
     best_qi = -float('inf')
     best_metrics = (0, 0, 0, 0)
     best_aligned_imit = imit
    
     Qs = 1.0 - (abs(Nc - No) / No)
    
-    for k in range(Nc):
-        shifted_imit = imit_healed[k:] + imit_healed[:k]
-       
-        eval_orig = list(orig_healed)
-        if not USE_FIRST_ANGLE: eval_orig[0] = (eval_orig[0][0], 0.0)
-       
-        eval_imit = list(shifted_imit)
-        if not USE_FIRST_ANGLE: eval_imit[0] = (eval_imit[0][0], 0.0)
-       
-        sum_l_o = sum(abs(eval_orig[m][0]) for m in range(Nmin))
-        sum_diff_l = sum(abs(eval_orig[m][0] - eval_imit[m][0]) for m in range(Nmin))
-        Ql = 1.0 - (sum_diff_l / sum_l_o) if sum_l_o > 0 else (1.0 if sum_diff_l == 0 else 0.0)
-       
-        start_idx = 0 if USE_FIRST_ANGLE else 1
-        if Nmin > start_idx:
-            valid_m = range(start_idx, Nmin)
-            sum_a_o = sum(abs(eval_orig[m][1]) for m in valid_m)
-            sum_diff_a = sum(abs(eval_orig[m][1] - eval_imit[m][1]) for m in valid_m)
-            Qa = 1.0 - (sum_diff_a / sum_a_o) if sum_a_o > 0 else (1.0 if sum_diff_a == 0 else 0.0)
-        else:
-            Qa = 1.0
+    # === LÓGICA CORREGIDA: Ventana deslizante (Sliding Window) ===
+    # Ya no forzamos que el patrón inicie desde el último segmento si la figura no está completa.
+    # Comparamos linealmente la secuencia 'imit' deslizada sobre 'orig'.
+    
+    # Evaluar cuando Imitado >= Original (Alineamiento circular estándar)
+    if Nc >= No:
+        imit_healed = heal_pattern(imit) # Solo reparamos si está completa
+        Nmin = No
+        for k in range(Nc):
+            shifted_imit = imit_healed[k:] + imit_healed[:k]
+            eval_orig = list(orig_healed)
+            if not USE_FIRST_ANGLE: eval_orig[0] = (eval_orig[0][0], 0.0)
            
-        Qi = (WEIGHT_L * Ql + WEIGHT_A * Qa + WEIGHT_S * Qs) / (WEIGHT_L + WEIGHT_A + WEIGHT_S)
-       
-        if Qi > best_qi:
-            best_qi = Qi
-            best_metrics = (Ql, Qa, Qs, Qi)
-            best_aligned_imit = eval_imit
+            eval_imit = list(shifted_imit)
+            if not USE_FIRST_ANGLE: eval_imit[0] = (eval_imit[0][0], 0.0)
            
+            sum_l_o = sum(abs(eval_orig[m][0]) for m in range(Nmin))
+            sum_diff_l = sum(abs(eval_orig[m][0] - eval_imit[m][0]) for m in range(Nmin))
+            Ql = 1.0 - (sum_diff_l / sum_l_o) if sum_l_o > 0 else (1.0 if sum_diff_l == 0 else 0.0)
+           
+            start_idx = 0 if USE_FIRST_ANGLE else 1
+            if Nmin > start_idx:
+                valid_m = range(start_idx, Nmin)
+                sum_a_o = sum(abs(eval_orig[m][1]) for m in valid_m)
+                sum_diff_a = sum(abs(eval_orig[m][1] - eval_imit[m][1]) for m in valid_m)
+                Qa = 1.0 - (sum_diff_a / sum_a_o) if sum_a_o > 0 else (1.0 if sum_diff_a == 0 else 0.0)
+            else:
+                Qa = 1.0
+               
+            Qi = (WEIGHT_L * Ql + WEIGHT_A * Qa + WEIGHT_S * Qs) / (WEIGHT_L + WEIGHT_A + WEIGHT_S)
+           
+            if Qi > best_qi:
+                best_qi = Qi
+                best_metrics = (Ql, Qa, Qs, Qi)
+                best_aligned_imit = eval_imit
+                
+    # Evaluar cuando Imitado < Original (Búsqueda de subsecuencia)
+    else:
+        Nmin = Nc
+        eval_orig_cycled = orig_healed + orig_healed
+        # NO usamos heal_pattern en el imitado, lo evaluamos tal cual llegó
+        eval_imit = list(imit)
+        
+        # Deslizamos la figura imitada (sin romperla) a lo largo de las combinaciones del original
+        for offset in range(No):
+            sub_orig = eval_orig_cycled[offset : offset + Nmin]
+            
+            eval_orig_tmp = list(sub_orig)
+            eval_imit_tmp = list(eval_imit)
+            
+            # Para comparar justamente, forzamos que el primer ángulo de esta 
+            # rebanada temporal del original tenga la misma orientación base que el imitado.
+            # (eval_imit_tmp[0][1] es el ángulo físico que el robot reportó).
+            base_angle = eval_imit_tmp[0][1]
+            eval_orig_tmp[0] = (eval_orig_tmp[0][0], base_angle)
+            
+            sum_l_o = sum(abs(eval_orig_tmp[m][0]) for m in range(Nmin))
+            sum_diff_l = sum(abs(eval_orig_tmp[m][0] - eval_imit_tmp[m][0]) for m in range(Nmin))
+            Ql = 1.0 - (sum_diff_l / sum_l_o) if sum_l_o > 0 else (1.0 if sum_diff_l == 0 else 0.0)
+            
+            # Evaluamos ángulos a partir del índice 1, ya que el índice 0 lo acabamos de igualar
+            start_idx = 1 
+            
+            if Nmin > start_idx:
+                valid_m = range(start_idx, Nmin)
+                sum_a_o = sum(abs(eval_orig_tmp[m][1]) for m in valid_m)
+                sum_diff_a = sum(abs(eval_orig_tmp[m][1] - eval_imit_tmp[m][1]) for m in valid_m)
+                Qa = 1.0 - (sum_diff_a / sum_a_o) if sum_a_o > 0 else (1.0 if sum_diff_a == 0 else 0.0)
+            else:
+                Qa = 1.0
+                
+            Qi = (WEIGHT_L * Ql + WEIGHT_A * Qa + WEIGHT_S * Qs) / (WEIGHT_L + WEIGHT_A + WEIGHT_S)
+            
+            if Qi > best_qi:
+                best_qi = Qi
+                best_metrics = (Ql, Qa, Qs, Qi)
+                # Conservamos el arreglo imitado intacto, con sus ángulos originales
+                best_aligned_imit = eval_imit_tmp
+                
     return best_aligned_imit, best_metrics
 
 def update_originals_window():
@@ -292,16 +345,19 @@ def create_dashboard(robot_id, imit_name, imit_vectors, orig_name, orig_vectors,
             ang_str = "0.00° (Ángulo direccional)"
         else:
             ang_str = f"{a:.2f}°"
-        text_info += f" S{i}: D={d:.2f}, A={ang_str}\n"
+        text_info += f" S{i}: A={ang_str}, D={d:.2f}\n"
        
     text_info += f"\n--- PATRÓN IMITADO (ALINEADO) ---\n"
     text_info += f"Robot: {robot_id} - {imit_name} (N={len(imit_vectors)})\n"
     for i, (d, a) in enumerate(imit_vectors, 1):
-        if i == 1 and not USE_FIRST_ANGLE:
+        # Mostramos el ángulo tal cual se extrajo para patrones imitados
+        ang_str = f"{a:.2f}°"
+        
+        # En caso de que se aplicara un 0.0 real o forzado por la bandera
+        if i == 1 and not USE_FIRST_ANGLE and a == 0.0:
             ang_str = "0.00° (Ángulo direccional)"
-        else:
-            ang_str = f"{a:.2f}°"
-        text_info += f" S{i}: D={d:.2f}, A={ang_str}\n"
+            
+        text_info += f" S{i}: A={ang_str}, D={d:.2f}\n"
 
     # --- DISEÑO ESPACIAL CORREGIDO ---
     if PLOT_SUPERPUESTAS:

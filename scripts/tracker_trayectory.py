@@ -9,7 +9,8 @@ DEPENDENCIAS LUA REQUERIDAS:
 - Variables: `displayed_data`, `PTTD`
 
 CARACTERÍSTICAS PRINCIPALES:
-1. AGRUPACIÓN EXPLÍCITA POR TICK: Busca `Timer=XXX` para reconstrucción perfecta del tiempo.
+1. AGRUPACIÓN EXPLÍCITA POR TICK: Busca `Timer=
+XXX` para reconstrucción perfecta del tiempo.
 2. OVERLAYS DE ACTIVE LEARNING: Soporta visualización de Centroides y Fuerzas Virtuales por sobre los robots.
 3. RENDERIZADO DUAL: Soporta renderizado de mapa de calor superpuesto o lado a lado.
 """
@@ -31,14 +32,17 @@ DEFAULT_XMAX        = 1.5       # Límite máximo del eje X
 DEFAULT_YMIN        = -1.5      # Límite mínimo del eje Y
 DEFAULT_YMAX        = 1.5       # Límite máximo del eje Y
 
-DEAD_TIME_LIMIT     = 1         # Tiempo de inactividad permitido en segundos de simulación
+OFFSET_X            = -1.3      # Desplazamiento (offset) en el eje X para alinear las coordenadas
+OFFSET_Y            = -1.3      # Desplazamiento (offset) en el eje Y para alinear las coordenadas
+
+DEAD_TIME_LIMIT     = 1.0         # Tiempo de inactividad permitido en segundos de simulación
 DELETE_ON_TIMEOUT   = True     # Elimina la trayectoria tras inactividad: True/False
 
 # --- CONTROL DE VELOCIDADES Y TIEMPO (FPS) ---
-SIM_TICKS_PER_SEC   = 10        # Ticks de simulación por segundo
+SIM_TICKS_PER_SEC   = 4         # Ticks de simulación por segundo
 LIVE_FPS            = 10        # Frecuencia de actualización de la gráfica en vivo
 VIDEO_FRAMES        = 2         # Cuadros por segundo usados para generar el video
-SYNC_VIDEO_DURATION = False     # Sincroniza la duración del video: True/False
+VIDEO_SPEED         = 8.0       # Multiplicador de velocidad (1.0 = normal, 2.0 = cámara rápida, 0.5 = cámara lenta)
 
 # --- Etiquetas y Nombres ---
 MODO_ETIQUETAS                  = 1     # Etiquetas: 0 = leyenda, 3 = fijas iniciales, otro = posición actual
@@ -64,11 +68,11 @@ MODO_TRAYECTORIA_MAESTROS = 1       # 1 = Línea continua para maestros, 0 = Sol
 # --- Representación del Observador (Cámara) 
 MODO_VISUAL_OBSERVADOR  = 1         # Observador: 0 = oculto, 1 = punto actual, 2 = trayectoria
 MODO_CIRCULO            = 2         # Círculo de visión: 0 = oculto, 1 = circulo visible , 2 = relleno semitransparente
-ANGULO_APERTURA         = 72.800    # Ángulo de apertura usado para calcular el radio de visión
-ALTURA_CAMARA           = 0.3       # Altura usada para calcular el radio de visión
+ANGULO_APERTURA         = 72.1      # Ángulo de apertura usado para calcular el radio de visión (Usar 70,711)
+ALTURA_CAMARA           = 0.25      # Altura usada para calcular el radio de visión
 
 # --- Mapa de Calor (Heatmap) ---
-MOSTRAR_MAPA_CALOR      = True      # Muestra el mapa de calor en vivo para el robot observador: True/False
+MOSTRAR_MAPA_CALOR      = False      # Muestra el mapa de calor en vivo para el robot observador: True/False
 RENDERIZAR_MAPA_CALOR   = True      # Muestra el mapa de calor en el video exportado: True/False
 DISPOSICION_MAPA        = 2         # 1 = Superpuesto en trayectoria, 2 = Lado a lado (Izquierda Mapa, Derecha Trayectorias)
 RESOLUCION_MAPA         = 400       # Resolución de la cuadrícula del mapa (ej. 100 = 100x100 celdas)
@@ -79,12 +83,12 @@ TRANSPARENCIA_MAPA      = 1.0       # 0.0 = Invisible, 1.0 = Estándar, 2.0 = S�
 # ---------- CONFIGURACIÓN DE GUARDADO DE DATOS ----------
 # =============================================================================
 # --- Rutas de Directorios ---
-VIDEO_DIR       = "Resultados/Robots/Qupa/Tr7/Pentagono/Trajectory"       # Carpeta donde se guarda el video
-CSV_DIR         = "Resultados/Robots/Qupa/Tr7/Pentagono/Trajectory/Data"  # Carpeta donde se guardan los CSV
+VIDEO_DIR       = "Resultados/Robots/Qupa/Ks3/CamposVectoriales/octagono/Trajectory"       # Carpeta donde se guarda el video
+CSV_DIR         = "Resultados/Robots/Qupa/Ks3/CamposVectoriales/octagono/Trajectory/Data"  # Carpeta donde se guardan los CSV
 
 # --- Video ---
 SAVE_VIDEO      = False                                            # Guarda el video: True/False
-DEFAULT_OUTFILE = "Tr7.mp4"                                     # Nombre del archivo de video de salida
+DEFAULT_OUTFILE = "Ks3.mp4"                                     # Nombre del archivo de video de salida
 
 # --- CSV ---
 SAVE_CSV        = False                                            # Guarda los datos en CSV: True/False
@@ -141,6 +145,9 @@ def parse_line(line):
                 name = parts[2]
                 x = float(parts[3].replace(',', '.'))
                 y = float(parts[4].replace(',', '.'))
+                if name != OBSERVADOR_ID and name not in TRAYECTORIAS_PERMANENTES:
+                    x += OFFSET_X
+                    y += OFFSET_Y
                 extras = [float(p.replace(',', '.')) for p in parts[5:] if p]
                 return 'al_data', name, x, y, {'mode': mode, 'extras': extras}
             except ValueError: pass
@@ -154,6 +161,9 @@ def parse_line(line):
                 name_clean = re.sub(r'^\[.*?\]\s*', '', name)
                 x = float(parts[2].replace(',', '.'))
                 y = float(parts[3].replace(',', '.'))
+                if name_clean != OBSERVADOR_ID and name_clean not in TRAYECTORIAS_PERMANENTES:
+                    x += OFFSET_X
+                    y += OFFSET_Y
                 return 'robot', name_clean, x, y, None
             except ValueError: pass
         return None
@@ -170,6 +180,9 @@ def parse_line(line):
         try:
             x = float(match.group(2).replace(',', '.'))
             y = float(match.group(3).replace(',', '.'))
+            if name_clean != OBSERVADOR_ID and name_clean not in TRAYECTORIAS_PERMANENTES:
+                x += OFFSET_X
+                y += OFFSET_Y
             return 'robot', name_clean, x, y, None
         except ValueError:
             pass
@@ -315,6 +328,13 @@ def add_heat(x, y, hmap, xmin, xmax, ymin, ymax, size, use_diameter, diameter):
             if 0 <= row+dr < size and 0 <= col+dc < size:
                 hmap[row+dr, col+dc] += val
 
+def get_rgba_buffer(fig):
+    """Extrae el buffer RGBA de la figura de forma segura garantizando el backend Agg."""
+    if not hasattr(fig, 'canvas') or not isinstance(fig.canvas, FigureCanvas):
+        FigureCanvas(fig)
+    fig.canvas.draw()
+    return np.asarray(fig.canvas.buffer_rgba()).tobytes()
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--xmin', type=float, default=DEFAULT_XMIN)
@@ -323,6 +343,7 @@ def main():
     parser.add_argument('--ymax', type=float, default=DEFAULT_YMAX)
     parser.add_argument('--live-fps', type=int, default=LIVE_FPS)
     parser.add_argument('--video-fps', type=int, default=VIDEO_FRAMES)
+    parser.add_argument('--video-speed', type=float, default=VIDEO_SPEED)
     parser.add_argument('--outfile', type=str, default=DEFAULT_OUTFILE)
     parser.add_argument('--duration', type=float, default=None)
     parser.add_argument('--mode', type=int, choices=[1,2], default=MODO)
@@ -709,7 +730,8 @@ def main():
                 while next_frame_sim_time <= current_sim_time + 1e-6: next_frame_sim_time += video_frame_interval
         if current_visual_frame: visual_frames.append(current_visual_frame)
 
-        playback_fps = args.video_fps if SYNC_VIDEO_DURATION else SIM_TICKS_PER_SEC 
+        # La tasa de fotogramas de salida es FPS extraídos multiplicados por la velocidad deseada.
+        playback_fps = args.video_fps * args.video_speed 
 
         try:
             accum = {n: {'xs': [], 'ys': []} for n in names_to_plot}
@@ -719,10 +741,12 @@ def main():
 
             if RENDERIZAR_MAPA_CALOR and DISPOSICION_MAPA == 2:
                 fig_save = Figure(figsize=(14,7), dpi=100) 
+                FigureCanvas(fig_save)  # Asignación forzada de backend Agg
                 ax_save_map = fig_save.add_subplot(121)
                 ax_save = fig_save.add_subplot(122)
             else:
                 fig_save = Figure(figsize=(7,7), dpi=100)
+                FigureCanvas(fig_save)  # Asignación forzada de backend Agg
                 ax_save = fig_save.add_subplot(111)
                 ax_save_map = ax_save if RENDERIZAR_MAPA_CALOR else None
 
@@ -738,12 +762,13 @@ def main():
 
             def ffmpeg_monitor():
                 for line in ffmpeg_proc.stdout:
-                    if any(w in line.decode('utf-8') for w in ["frame=", "fps=", "size="]):
-                        sys.stdout.write(f"\r[Tracker Trayectoria] -> {line.decode('utf-8').strip()}")
+                    pass # Silenciamos FFMPEG para usar nuestro propio contador limpio
+            
             monitor_thread = threading.Thread(target=ffmpeg_monitor, daemon=True)
             monitor_thread.start()
 
             vid_current_al_data = {}
+            total_frames = len(visual_frames) # Total de frames a renderizar
 
             for idx, v_frame in enumerate(visual_frames):
                 current_tick_ts = fallback_ts
@@ -872,7 +897,6 @@ def main():
                     elif mode == 3:
                         if len(extras) >= 2:
                             cx, cy = extras[0], extras[1]
-                            # Aquí también se recibirán los datos de PID extras si decides extraerlos en video en el futuro
                             ax_save.arrow(x_rob, y_rob, cx, cy, head_width=0.04, head_length=0.06, fc='orange', ec='orange', alpha=0.8, length_includes_head=True, zorder=7)
                             ax_save.plot(x_rob + cx, y_rob + cy, marker='X', markersize=6, color='orange', markeredgewidth=1, zorder=7)
                     elif mode == 4:
@@ -906,15 +930,21 @@ def main():
                             drawn_positions.append((tx_clamped, ty_clamped))
                             ax_save.text(tx_clamped, ty_clamped, get_display_name(name), color=get_color(i), fontsize=9, fontweight='bold', zorder=8, bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
 
-                fig_save.canvas.draw()
-                try: ffmpeg_proc.stdin.write(fig_save.canvas.buffer_rgba())
+                # Extracción y escritura del buffer usando get_rgba_buffer directamente
+                try: ffmpeg_proc.stdin.write(get_rgba_buffer(fig_save))
                 except BrokenPipeError: break
+                
+                # --- PROGRESO EN PANTALLA ---
+                sys.stdout.write(f"\r[Tracker Trayectoria] Renderizando frame {idx + 1} de {total_frames} ({(idx + 1)/total_frames*100:.1f}%)")
+                sys.stdout.flush()
+                # ----------------------------
+
                 if (idx + 1) % 50 == 0: gc.collect()
 
             ffmpeg_proc.stdin.close(); ffmpeg_proc.wait(); monitor_thread.join()
-            print("[Tracker Trayectoria] [+] ¡Video guardado exitosamente!")
+            print("\n[Tracker Trayectoria] [+] ¡Video guardado exitosamente!")
 
-        except Exception as e: print(f"\n[Tracker] [!] ERROR CRÍTICO VIDEO:\n {e}")
+        except Exception as e: print(f"\n[Tracker Trayectoria] [!] ERROR CRÍTICO VIDEO:\n {e}")
 
 if __name__ == '__main__':
     main()
