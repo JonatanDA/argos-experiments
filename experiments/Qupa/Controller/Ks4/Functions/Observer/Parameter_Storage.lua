@@ -10,7 +10,7 @@ ParameterStorage.USE_GLOBAL_MEMORY = true
 -- 0: Sin logs
 -- 1: Logs básicos (Cuando añade o refina datos)
 -- 2: Logs detallados (Depuración de memoria global paso a paso)
-ParameterStorage.PS_LOG_MODE = 0 
+ParameterStorage.PS_LOG_MODE = 2
 
 local DataBuffer = { 
     stored = {},            

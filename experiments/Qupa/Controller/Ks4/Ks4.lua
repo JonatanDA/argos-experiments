@@ -45,7 +45,7 @@ g_speed     = 80                  -- Velocidad de giro del apprentice
 -- Modelos
 
 -- Métricas del modelo de absevación
-distance_treshold       = 60/ticks_per_second         -- Sensibilidad del apprentice a caambios en los puntos obtenidos del maestro durante la etapa de observación.
+distance_treshold       = 20         -- Sensibilidad del apprentice a caambios en los puntos obtenidos del maestro durante la etapa de observación.
 
 -- Métricas del modelo de paciencia
 MAX_PATIENCE            = 160 * ticks_per_second       -- Tiempo máximo de espera sin recibir datos útiles en segundos
@@ -121,7 +121,7 @@ end
 ------------------------------
 -- Banderas de loggeo
 SRP_LOG_MODE        = 0 -- 0: Sin logs, 1: Parámetros obtenidos tras finalizar la observación de un maestro. 2. Paso a paso de la actualización de maestros, 3: Imprime todo.
-UP_LOG_MODE         = 1 -- 0: Sin logs, 1: Delimitador de ciclos de aprendizaje 2: Información sobre la paciencia (Tiempo que el apprentice actualiza para continuar o deter su aprendizaje) 3: Todo lo anterior
+UP_LOG_MODE         = 2 -- 0: Sin logs, 1: Delimitador de ciclos de aprendizaje 2: Información sobre la paciencia (Tiempo que el apprentice actualiza para continuar o deter su aprendizaje)
 AL_LOG_MODE         = 0 -- 0: Sin logs, 1: Información sobre el Active Learning, 2: Información detallada del Active Learning, 3: Estados del active learning
 DEBUG_EVASION       = 0 -- 0: Nada, 1: Cambios de estado, 2: Sensores y estados continuos
 
@@ -403,28 +403,22 @@ function master()
     end
 end
 
-c4 = 0
+c4      = 0
+AP_1    = 1
 function apprentice()
 
+    -- === ESTADO DE APRENDIZAJE ===
     if c4 == 0 then 
         store_relative_positions()
         
-    elseif c4 == 1 then
-        local NAC = navegar_a_coordenadas(0,0,0.10)
-        if NAC then
-            c4 = 2
-        end 
-        
-    elseif c4 == 2 then
-        resetOBS()
-        is_master = 1
-        
     -- === ESTADOS DE EXPLORACIÓN (RANDOM WALK) ===
-    elseif c4 == 3 then
+    elseif c4 == 1 then
+
+        AP_1 = 1
         rw_timer = rw_timer + 1
-        
-        RandomWalking()
         if Print_tracker_trayectory_data then Print_tracker_trayectory_data("trajectory", "Qupa4", 0, 0) end
+
+        RandomWalking()
 
         if rw_timer >= TIEMPO_RW_TICKS then
             robot.wheels.set_velocity(0, 0)
@@ -432,10 +426,10 @@ function apprentice()
             r_Temporizador_1()
             r_move()
             rw_timer = 0             
-            c4 = 4                   
+            c4 = 2                   
         end
 
-    elseif c4 == 4 then
+    elseif c4 == 2 then
         -- Limpieza selectiva de memoria: Manda los IDs ganadores para que el global buffer descarte los inútiles
         local current_cfg = { CONFIG = CONFIG, LOG_MODE = SRP_LOG_MODE }
         ParameterStorage.clear(current_cfg, current_winning_ids)
@@ -451,6 +445,17 @@ function apprentice()
         if Print_tracker_trayectory_data then print("[trajectory];" .. "[offset];" .. current_x .. ";" .. current_y .. ";" .. ang) end
 
         c4 = 0 -- Regresa a observar
+
+    -- === ESTADOS DE EJECUCUCION DE COMPORTAMIENTOS APRENDIDOS ===
+    elseif c4 == 3 then
+        local NAC = navegar_a_coordenadas(0,0,0.10)
+        if NAC then
+            c4 = 4
+        end 
+        
+    elseif c4 == 4 then
+        resetOBS()
+        is_master = 1
     end
 end
 
@@ -721,12 +726,6 @@ function check_patience_and_reconstruct()
     if Print_tracker_paciencia then Print_tracker_paciencia(current_patience/ticks_per_second) end
 
     if current_patience <= 0 then
-        if UP_LOG_MODE == 1 or UP_LOG_MODE == 3 then 
-            log("\n===========================================================")
-            log(" [INICIO CICLO DE APRENDIZAJE] PACIENCIA AGOTADA")
-            log("===========================================================")
-            log(" Procesando memoria a corto plazo y reconstruyendo...") 
-        end
         
         local datos_guardados = ParameterStorage.get_stored_data()
         local current_cfg = { CONFIG = CONFIG, LOG_MODE = SRP_LOG_MODE }   
@@ -754,7 +753,7 @@ function check_patience_and_reconstruct()
                         local qi = ImitationQuality.evaluate(comportamiento_conocido, nuevo_comportamiento)
                         if qi >= K_UMBRAL_SIMILITUD then
                             es_conocido = true
-                            if UP_LOG_MODE == 2 or UP_LOG_MODE == 3 then log(string.format(" -> Comportamiento redundante detectado. Similitud Qi = %.2f%%", qi*100)) end
+                            if UP_LOG_MODE == 2 then log(string.format(" -> Comportamiento redundante detectado. Similitud Qi = %.2f%%", qi*100)) end
                             
                             -- PROMEDIAR PARÁMETROS DEL COMPORTAMIENTO
                             local min_len = math.min(#comportamiento_conocido, #nuevo_comportamiento)
@@ -775,7 +774,7 @@ function check_patience_and_reconstruct()
                     if not es_conocido then
                         hay_comportamiento_nuevo = true
                         table.insert(all_params, nuevo_comportamiento)
-                        if UP_LOG_MODE == 2 or UP_LOG_MODE == 3 then log(" >>> COMPORTAMIENTO NUEVO AÑADIDO AL DICCIONARIO <<<") end
+                        if UP_LOG_MODE == 2 then log(" >>> COMPORTAMIENTO NUEVO AÑADIDO AL DICCIONARIO <<<") end
                     end
                 end
             end
@@ -786,17 +785,17 @@ function check_patience_and_reconstruct()
         -- LÓGICA DE REDUCCIÓN DE INTENTOS Y FIN DE CICLO
         if hay_comportamiento_nuevo then
             intentos_redundantes = N_MAX_INTENTOS
-            if UP_LOG_MODE == 1 or UP_LOG_MODE == 3 then
+            if UP_LOG_MODE >= 1 or SRP_LOG_MODE >= 1 then
                 log("\n===========================================================")
                 log(" [FIN CICLO DE APRENDIZAJE] NUEVO COMPORTAMIENTO GUARDADO")
                 log(" Iniciando Random Walk para explorar nuevas áreas.")
-                log("===========================================================\n")
+                log("===========================================================\n\n\n")
             end
-            c4 = 3 
+            c4 = 1 
         else
             intentos_redundantes = intentos_redundantes - 1
             if intentos_redundantes > 0 then
-                if UP_LOG_MODE == 1 or UP_LOG_MODE == 3 then 
+                if UP_LOG_MODE >= 1 or SRP_LOG_MODE >= 1 then 
                     log("\n===========================================================")
                     log(" [FIN CICLO DE APRENDIZAJE] REDUNDANCIA O FALLO")
                     if exito then
@@ -805,12 +804,12 @@ function check_patience_and_reconstruct()
                         log(" -> Reconstrucción fallida (Pura basura). Intentos restantes N = " .. intentos_redundantes)
                     end
                     log(" Iniciando Random Walk para buscar mejor perspectiva.")
-                    log("===========================================================\n")
+                    log("===========================================================\n\n\n")
                 end
-                c4 = 3 
+                c4 = 1 
             else
-                if UP_LOG_MODE == 1 or UP_LOG_MODE == 3 then 
-                    log("\n===========================================================")
+                if UP_LOG_MODE >= 1 or SRP_LOG_MODE >= 1 then 
+                    log("\n\n\n===========================================================")
                     log(" [FIN FASE DE APRENDIZAJE] INTENTOS AGOTADOS (N=0)")
                     log("===========================================================")
                 end
@@ -833,7 +832,7 @@ function check_patience_and_reconstruct()
                 log("===========================================================\n")
 
                 intentos_redundantes = N_MAX_INTENTOS 
-                c4 = 1
+                c4 = 3
             end
         end
     end
@@ -881,9 +880,9 @@ end
 
 function process_single_observation(k, track)
     if SRP_LOG_MODE == 1 or  SRP_LOG_MODE == 3 then
-        log(" ######################################################## ")
+        log(" ........................................................ ")
         log(" PROCESANDO OBSERVACIÓN DEL MAESTRO "..k.." (Datos totales: "..#track.raw_x..")")
-        log(" ######################################################## ")
+        log(" ........................................................ ")
     end
 
     local clean_mov, clean_type, clean_valid, p_start, p_end = PointCloudSegmenter.process(k, track.raw_x, track.raw_y, track.raw_type, seg_cfg)
@@ -923,6 +922,15 @@ end
 
 srt_c1 = 0
 function store_relative_positions()
+
+    if AP_1 == 1 then
+        if UP_LOG_MODE >= 1 or SRP_LOG_MODE >= 1 then 
+            log("\n\n\n===========================================================")
+            log(" [INICIO CICLO DE APRENDIZAJE] ")
+            log("===========================================================")  
+        end
+        AP_1 = 0
+    end
 
     if Print_tracker_trayectory_data then Print_tracker_trayectory_data("trajectory", "Qupa4", 0, 0) end
     check_patience_and_reconstruct()
@@ -1571,8 +1579,13 @@ end
 -------------------------------------------------------------------------------------------------------------------------------------
 
 -------------------------------------------------------------------------
--- Funciones de acciones de los Qupa (Random Walking)
+-- Random Walking
 -------------------------------------------------------------------------
+-- Parámetros configurables de sensibilidad (Umbrales)
+RW_THRESHOLD_FRONT = 0.4  -- Sensibilidad cono frontal (-45°, 0°, 45°)
+RW_THRESHOLD_SIDE  = 0.8  -- Sensibilidad lateral (-90°, 90°)
+RW_THRESHOLD_CLEAR = 0.3  -- Umbral para considerar que el camino vuelve a estar libre
+
 -- Variables globales de estado para el Random Walk
 RW_b1 = 0
 Rw_target_angle = 0
@@ -1590,20 +1603,41 @@ function RandomWalking()
         -- ESTADO 0: AVANZANDO Y EVALUANDO
         -- ==========================================================
         
-        -- Incrementamos el temporizador de camino libre
         RW_clear_path_timer = RW_clear_path_timer + 1
         
-        -- Si hemos avanzado un buen rato sin obstáculos, reseteamos la memoria de atascos
-        if RW_clear_path_timer > 30 and datos_prox.max_val.valor < 0.3 then
+        -- Si avanzamos un buen rato sin obstáculos, reseteamos la memoria de atascos
+        if RW_clear_path_timer > 30 and datos_prox.max_val.valor < RW_THRESHOLD_CLEAR then
             RW_stuck_counter = 0
         end
 
         local max_val = datos_prox.max_val.valor
         local max_ang = datos_prox.max_val.angulo
 
-        -- DETONANTE: Obstáculo peligroso (> 0.8) y QUE NO SEA EL SENSOR TRASERO
-        -- Se usa math.abs(max_ang) ~= 180 para ignorar colisiones por detrás mientras avanzamos.
-        if max_val > 0.4 and math.abs(max_ang) ~= 180 then
+        -- ----------------------------------------------------------
+        -- EVALUACIÓN DE ZONAS Y UMBRALES
+        -- ----------------------------------------------------------
+        local trigger_evasion = false
+        
+        -- 1. Zona Frontal (-45°, 0°, 45° inclusive)
+        if math.abs(max_ang) <= 45 then
+            if max_val > RW_THRESHOLD_FRONT then
+                trigger_evasion = true
+            end
+            
+        -- 2. Zona Lateral (90° o -90°)
+        elseif math.abs(max_ang) == 90 then
+            if max_val > RW_THRESHOLD_SIDE then
+                trigger_evasion = true
+            end
+        end
+        
+        -- 3. Zona Trasera (180° o -180°): Se ignora.
+        -- Como no cae en las condiciones de arriba, trigger_evasion se mantiene en 'false'.
+
+        -- ----------------------------------------------------------
+        -- ACCIÓN BASADA EN LA EVALUACIÓN
+        -- ----------------------------------------------------------
+        if trigger_evasion then
             
             -- 1. Detener motores de inmediato
             robot.wheels.set_velocity(0, 0)
@@ -1623,7 +1657,7 @@ function RandomWalking()
                     Rw_target_angle = -Rw_target_angle 
                 end
                 
-                RW_stuck_counter = 0 -- Reseteamos la frustración porque ya tomamos acción extrema
+                RW_stuck_counter = 0 -- Reseteamos la frustración
                 
             else
                 -- CASO B: Evasión Inteligente basada en el sensor específico
@@ -1652,7 +1686,7 @@ function RandomWalking()
                     Rw_target_angle = robot.random.uniform_int(45, 90)
                     
                 else
-                    -- Fallback de seguridad (Si algo altera los ángulos)
+                    -- Fallback de seguridad
                     Rw_target_angle = robot.random.uniform_int(90, 180)
                 end
             end
@@ -1661,7 +1695,7 @@ function RandomWalking()
             RW_b1 = 1
             
         else
-            -- Si no hay peligro al frente o a los lados, avanzar
+            -- Si no se disparó la evasión (frente libre, lados lejos, o sensor trasero), avanzamos.
             robot.wheels.set_velocity(30, 30)
         end
 

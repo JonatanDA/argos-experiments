@@ -65,7 +65,7 @@ local MATH_TOLERANCE = 15
 -- 4. FILTRADO DE RUIDO (TOLERANCIA A LA BASURA DEL SENSOR)
 
 -- Piso mínimo absoluto de filtrado (0.2 equivalentes al 20%).
-local RUIDO_BASE = 0.05
+local RUIDO_BASE = 0.1
 
 -- Margen de ajuste adicional para el ruido (0.15 equivalentes al +15%).
 local RUIDO_PENALIZACION_MAX = 0.15
