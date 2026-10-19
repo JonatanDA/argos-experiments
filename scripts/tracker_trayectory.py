@@ -9,8 +9,7 @@ DEPENDENCIAS LUA REQUERIDAS:
 - Variables: `displayed_data`, `PTTD`
 
 CARACTERÍSTICAS PRINCIPALES:
-1. AGRUPACIÓN EXPLÍCITA POR TICK: Busca `Timer=
-XXX` para reconstrucción perfecta del tiempo.
+1. AGRUPACIÓN EXPLÍCITA POR TICK: Busca `Timer=XXX` para reconstrucción perfecta del tiempo.
 2. OVERLAYS DE ACTIVE LEARNING: Soporta visualización de Centroides y Fuerzas Virtuales por sobre los robots.
 3. RENDERIZADO DUAL: Soporta renderizado de mapa de calor superpuesto o lado a lado.
 """
@@ -32,9 +31,6 @@ DEFAULT_XMAX        = 1.5       # Límite máximo del eje X
 DEFAULT_YMIN        = -1.5      # Límite mínimo del eje Y
 DEFAULT_YMAX        = 1.5       # Límite máximo del eje Y
 
-OFFSET_X            = -1.3      # Desplazamiento (offset) en el eje X para alinear las coordenadas
-OFFSET_Y            = -1.3      # Desplazamiento (offset) en el eje Y para alinear las coordenadas
-
 DEAD_TIME_LIMIT     = 1.0         # Tiempo de inactividad permitido en segundos de simulación
 DELETE_ON_TIMEOUT   = True     # Elimina la trayectoria tras inactividad: True/False
 
@@ -55,7 +51,7 @@ MAX_HISTORICAS_TRANSPARENTES    = 3     # Cantidad máxima de posiciones histór
 # Listas y reglas de nombres configurables
 PALABRAS_IGNORADAS       = []          # Palabras al inicio del nombre que hacen que se ignore el robot
 PREFIJOS_NORMALIZABLES   = ["master"]    # Prefijos cuyos nombres con números serán normalizados
-TRAYECTORIAS_PERMANENTES = ["Patrón1", "Patrón2"] # Nombres cuya trayectoria NUNCA se borra ni se recorta
+TRAYECTORIAS_PERMANENTES = ["Patrón1", "Patrón2", "Patrón3", "Patrón4", "Patrón5", "Patrón6"] # Nombres cuya trayectoria NUNCA se borra ni se recorta
 OBSERVADOR_ID            = "Apprentice"  # Identificador interno del robot observador
 PRESERVAR_NOMBRES_LIBRES = True          # Conserva nombres sin número: True/False
 
@@ -129,14 +125,34 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 heat_cmap = copy.copy(plt.get_cmap('jet'))
 heat_cmap.set_under('none')
 
+# Variables globales para el manejo de offset automático
+current_offset_x = 0.0
+current_offset_y = 0.0
+current_offset_theta = 0.0
+
 RADIO_VISION = ALTURA_CAMARA * math.tan(math.radians(ANGULO_APERTURA))
 NUM_PATTERN = r'[-]?\d+[.,]?\d*(?:[eE][-+]?\d+)?'
 FULL_LINE_PATTERN = re.compile(rf'^(.+?)\s*&\s*({NUM_PATTERN})\s*,\s*({NUM_PATTERN})\s*$')
 
 def parse_line(line):
+    global current_offset_x, current_offset_y, current_offset_theta
     line_str = line.strip()
     if not line_str: return None
     
+    # Procesar línea de calibración de offset dinámico
+    if line_str.startswith("[trajectory];[offset];"):
+        parts = line_str.split(';')
+        if len(parts) >= 4:
+            try:
+                current_offset_x = float(parts[2].replace(',', '.'))
+                current_offset_y = float(parts[3].replace(',', '.'))
+            except ValueError: pass
+        if len(parts) >= 5:
+            try:
+                current_offset_theta = float(parts[4].replace(',', '.'))
+            except ValueError: pass
+        return None
+        
     if line_str.startswith("[active_learning]"):
         parts = line_str.split(';')
         if len(parts) >= 5:
@@ -145,10 +161,35 @@ def parse_line(line):
                 name = parts[2]
                 x = float(parts[3].replace(',', '.'))
                 y = float(parts[4].replace(',', '.'))
-                if name != OBSERVADOR_ID and name not in TRAYECTORIAS_PERMANENTES:
-                    x += OFFSET_X
-                    y += OFFSET_Y
                 extras = [float(p.replace(',', '.')) for p in parts[5:] if p]
+                
+                # --- CORRECCIÓN DE ORIENTACIÓN AQUÍ ---
+                if current_offset_theta != 0.0:
+                    cos_t = math.cos(current_offset_theta)
+                    sin_t = math.sin(current_offset_theta)
+                    
+                    # 1. ROTAR VECTORES (fx,fy o cx,cy): 
+                    # Se aplica a TODOS los modos (incluido el 4) y a TODOS los robots (incluido el Observador).
+                    # Esto asegura que la flecha apunte hacia donde realmente mira el robot globalmente.
+                    if len(extras) >= 2:
+                        nx_ext = extras[0] * cos_t - extras[1] * sin_t
+                        ny_ext = extras[0] * sin_t + extras[1] * cos_t
+                        extras[0], extras[1] = nx_ext, ny_ext
+                    
+                    # 2. ROTAR POSICIÓN (x, y):
+                    # Se aplica SOLO a los maestros. El Observador (Ra/Apprentice) 
+                    # ya envía su (x, y) de forma global en Lua, por lo que no se debe rotar.
+                    if name != OBSERVADOR_ID and name not in TRAYECTORIAS_PERMANENTES:
+                        nx = x * cos_t - y * sin_t
+                        ny = x * sin_t + y * cos_t
+                        x, y = nx, ny
+                        
+                # 3. TRASLADAR POSICIÓN (x, y):
+                # De nuevo, solo a los maestros. El Observador ya está en sus coordenadas globales reales.
+                if name != OBSERVADOR_ID and name not in TRAYECTORIAS_PERMANENTES:
+                    x += current_offset_x
+                    y += current_offset_y
+                    
                 return 'al_data', name, x, y, {'mode': mode, 'extras': extras}
             except ValueError: pass
         return None
@@ -161,9 +202,18 @@ def parse_line(line):
                 name_clean = re.sub(r'^\[.*?\]\s*', '', name)
                 x = float(parts[2].replace(',', '.'))
                 y = float(parts[3].replace(',', '.'))
+                
                 if name_clean != OBSERVADOR_ID and name_clean not in TRAYECTORIAS_PERMANENTES:
-                    x += OFFSET_X
-                    y += OFFSET_Y
+                    if current_offset_theta != 0.0:
+                        cos_t = math.cos(current_offset_theta)
+                        sin_t = math.sin(current_offset_theta)
+                        nx = x * cos_t - y * sin_t
+                        ny = x * sin_t + y * cos_t
+                        x, y = nx, ny
+                        
+                    x += current_offset_x
+                    y += current_offset_y
+                    
                 return 'robot', name_clean, x, y, None
             except ValueError: pass
         return None
@@ -180,9 +230,18 @@ def parse_line(line):
         try:
             x = float(match.group(2).replace(',', '.'))
             y = float(match.group(3).replace(',', '.'))
+            
             if name_clean != OBSERVADOR_ID and name_clean not in TRAYECTORIAS_PERMANENTES:
-                x += OFFSET_X
-                y += OFFSET_Y
+                if current_offset_theta != 0.0:
+                    cos_t = math.cos(current_offset_theta)
+                    sin_t = math.sin(current_offset_theta)
+                    nx = x * cos_t - y * sin_t
+                    ny = x * sin_t + y * cos_t
+                    x, y = nx, ny
+                    
+                x += current_offset_x
+                y += current_offset_y
+                
             return 'robot', name_clean, x, y, None
         except ValueError:
             pass
@@ -619,8 +678,6 @@ def main():
                     # Modo 3: Centroide PID
                     if len(extras) >= 2:
                         cx, cy = extras[0], extras[1]
-                        # Las variables de control extras (pid_output, speed_d, speed_g) vienen en extras[2], extras[3], extras[4]
-                        # Por ahora graficamos el centroide de forma estándar:
                         ax_main.arrow(x_rob, y_rob, cx, cy, head_width=0.04, head_length=0.06, fc='orange', ec='orange', alpha=0.8, length_includes_head=True, zorder=7)
                         ax_main.plot(x_rob + cx, y_rob + cy, marker='X', markersize=6, color='orange', markeredgewidth=1, zorder=7)
                 

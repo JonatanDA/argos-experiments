@@ -2,12 +2,12 @@
 	- ¿ Por qué a menor velocidad menor Qi? 
 		- Revisar: Distance_threshold actualmente dependiente de velocidad del maestro y aprendiz -> ? -> Mejorar: valor constante de variable ✅
 		
-2- Revisa métricas de evaluación 
+2- Revisa métricas de evaluación ✅
 
 3. Nuevo modo de Active learning
-	- Peso a nueva información
+	- Peso a nueva información -> Inviable debido al rango de perpecepción ===> Random walking para explorar nuevas áreas ✅
 
-4. Configurar experimento planteado en sesión 17/09
+4. Configurar experimento planteado en sesión 17/09 ✅
 
 5. Corregir rango de visión
 	- Solución desde Lua -> Saturación ✅

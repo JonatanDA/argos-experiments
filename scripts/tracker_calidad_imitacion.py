@@ -28,13 +28,13 @@ import matplotlib.pyplot as plt
 # =============================================================================
 # --- Ventanas de Comparación ---
 SHOW_COMPARISON_WINDOWS = True                                     # True: Abre pop-ups evaluando la calidad de imitación
-MAX_WINDOWS             = 5                                        # Límite de ventanas abiertas simultáneamente
+MAX_WINDOWS             = 2                                        # Límite de ventanas abiertas simultáneamente
 
 # --- Ventana de Diccionario Original ---
 SHOW_ALL_ORIGINALS      = False                                    # True: Muestra gráfica con todos los patrones originales de referencia
 
 # --- Modo de Gráfica ---
-PLOT_SUPERPUESTAS       = False                                    # (Aplica para SHOW_COMPARISON y SHOW_ALL_ORIGINALS) True: Gráficas superpuesta. False: Gráficas separadas.
+PLOT_SUPERPUESTAS       = True                                    # (Aplica para SHOW_COMPARISON y SHOW_ALL_ORIGINALS) True: Gráficas superpuesta. False: Gráficas separadas.
 
 # =============================================================================
 # ---------- CONFIGURACIÓN DE GUARDADO DE DATOS ----------
@@ -179,26 +179,136 @@ def calc_coords(vectors):
         ys.append(y)
     return xs, ys
 
+# def evaluate_against_reference(orig, imit):
+#     No = len(orig)
+#     Nc = len(imit)
+#     if No == 0 or Nc == 0: return imit, (0, 0, 0, 0)
+   
+#     orig_healed = heal_pattern(orig)
+   
+#     best_qi = -float('inf')
+#     best_metrics = (0, 0, 0, 0)
+#     best_aligned_imit = imit
+   
+#     Qs = 1.0 - (abs(Nc - No) / No)
+   
+#     # === LÓGICA CORREGIDA: Ventana deslizante (Sliding Window) ===
+#     # Ya no forzamos que el patrón inicie desde el último segmento si la figura no está completa.
+#     # Comparamos linealmente la secuencia 'imit' deslizada sobre 'orig'.
+    
+#     # Evaluar cuando Imitado >= Original (Alineamiento circular estándar)
+#     if Nc >= No:
+#         imit_healed = heal_pattern(imit) # Solo reparamos si está completa
+#         Nmin = No
+#         for k in range(Nc):
+#             shifted_imit = imit_healed[k:] + imit_healed[:k]
+#             eval_orig = list(orig_healed)
+#             if not USE_FIRST_ANGLE: eval_orig[0] = (eval_orig[0][0], 0.0)
+           
+#             eval_imit = list(shifted_imit)
+#             if not USE_FIRST_ANGLE: eval_imit[0] = (eval_imit[0][0], 0.0)
+           
+#             sum_l_o = sum(abs(eval_orig[m][0]) for m in range(Nmin))
+#             sum_diff_l = sum(abs(eval_orig[m][0] - eval_imit[m][0]) for m in range(Nmin))
+#             Ql = 1.0 - (sum_diff_l / sum_l_o) if sum_l_o > 0 else (1.0 if sum_diff_l == 0 else 0.0)
+           
+#             start_idx = 0 if USE_FIRST_ANGLE else 1
+#             if Nmin > start_idx:
+#                 valid_m = range(start_idx, Nmin)
+#                 sum_a_o = sum(abs(eval_orig[m][1]) for m in valid_m)
+#                 sum_diff_a = sum(abs(eval_orig[m][1] - eval_imit[m][1]) for m in valid_m)
+#                 Qa = 1.0 - (sum_diff_a / sum_a_o) if sum_a_o > 0 else (1.0 if sum_diff_a == 0 else 0.0)
+#             else:
+#                 Qa = 1.0
+               
+#             Qi = (WEIGHT_L * Ql + WEIGHT_A * Qa + WEIGHT_S * Qs) / (WEIGHT_L + WEIGHT_A + WEIGHT_S)
+           
+#             if Qi > best_qi:
+#                 best_qi = Qi
+#                 best_metrics = (Ql, Qa, Qs, Qi)
+#                 best_aligned_imit = eval_imit
+                
+#     # Evaluar cuando Imitado < Original (Búsqueda de subsecuencia)
+#     else:
+#         Nmin = Nc
+#         eval_orig_cycled = orig_healed + orig_healed
+#         # NO usamos heal_pattern en el imitado, lo evaluamos tal cual llegó
+#         eval_imit = list(imit)
+        
+#         # Deslizamos la figura imitada (sin romperla) a lo largo de las combinaciones del original
+#         for offset in range(No):
+#             sub_orig = eval_orig_cycled[offset : offset + Nmin]
+            
+#             eval_orig_tmp = list(sub_orig)
+#             eval_imit_tmp = list(eval_imit)
+            
+#             # Para comparar justamente, forzamos que el primer ángulo de esta 
+#             # rebanada temporal del original tenga la misma orientación base que el imitado.
+#             # (eval_imit_tmp[0][1] es el ángulo físico que el robot reportó).
+#             base_angle = eval_imit_tmp[0][1]
+#             eval_orig_tmp[0] = (eval_orig_tmp[0][0], base_angle)
+            
+#             sum_l_o = sum(abs(eval_orig_tmp[m][0]) for m in range(Nmin))
+#             sum_diff_l = sum(abs(eval_orig_tmp[m][0] - eval_imit_tmp[m][0]) for m in range(Nmin))
+#             Ql = 1.0 - (sum_diff_l / sum_l_o) if sum_l_o > 0 else (1.0 if sum_diff_l == 0 else 0.0)
+            
+#             # Evaluamos ángulos a partir del índice 1, ya que el índice 0 lo acabamos de igualar
+#             start_idx = 1 
+            
+#             if Nmin > start_idx:
+#                 valid_m = range(start_idx, Nmin)
+#                 sum_a_o = sum(abs(eval_orig_tmp[m][1]) for m in valid_m)
+#                 sum_diff_a = sum(abs(eval_orig_tmp[m][1] - eval_imit_tmp[m][1]) for m in valid_m)
+#                 Qa = 1.0 - (sum_diff_a / sum_a_o) if sum_a_o > 0 else (1.0 if sum_diff_a == 0 else 0.0)
+#             else:
+#                 Qa = 1.0
+                
+#             Qi = (WEIGHT_L * Ql + WEIGHT_A * Qa + WEIGHT_S * Qs) / (WEIGHT_L + WEIGHT_A + WEIGHT_S)
+            
+#             if Qi > best_qi:
+#                 best_qi = Qi
+#                 best_metrics = (Ql, Qa, Qs, Qi)
+#                 # Conservamos el arreglo imitado intacto, con sus ángulos originales
+#                 best_aligned_imit = eval_imit_tmp
+                
+#     return best_aligned_imit, best_metrics
+
 def evaluate_against_reference(orig, imit):
     No = len(orig)
     Nc = len(imit)
     if No == 0 or Nc == 0: return imit, (0, 0, 0, 0)
    
     orig_healed = heal_pattern(orig)
-   
     best_qi = -float('inf')
     best_metrics = (0, 0, 0, 0)
     best_aligned_imit = imit
    
     Qs = 1.0 - (abs(Nc - No) / No)
    
-    # === LÓGICA CORREGIDA: Ventana deslizante (Sliding Window) ===
-    # Ya no forzamos que el patrón inicie desde el último segmento si la figura no está completa.
-    # Comparamos linealmente la secuencia 'imit' deslizada sobre 'orig'.
+    # 1. Obtener coordenadas cartesianas para calcular la rotación óptima (Invariancia a Rotación)
+    orig_xs, orig_ys = calc_coords(orig_healed)
+    imit_xs, imit_ys = calc_coords(imit)
     
-    # Evaluar cuando Imitado >= Original (Alineamiento circular estándar)
+    # Calcular centroides para centrar ambas trayectorias
+    cx_o, cy_o = sum(orig_xs)/len(orig_xs), sum(orig_ys)/len(orig_ys)
+    cx_i, cy_i = sum(imit_xs)/len(imit_xs), sum(imit_ys)/len(imit_ys)
+    
+    # Encontrar el ángulo de rotación óptimo usando covarianza cruzada (Kabsch 2D / SVD simplificado)
+    num = sum((orig_xs[k] - cx_o) * (imit_ys[k] - cy_i) - (orig_ys[k] - cy_o) * (imit_xs[k] - cx_i) for k in range(min(len(orig_xs), len(imit_xs))))
+    den = sum((orig_xs[k] - cx_o) * (imit_xs[k] - cx_i) + (orig_ys[k] - cy_o) * (imit_ys[k] - cy_i) for k in range(min(len(orig_xs), len(imit_xs))))
+    theta_opt = math.atan2(num, den) if den != 0 else 0.0
+    deg_opt = math.degrees(theta_opt)
+
+    # Rotar el conjunto de vectores imitados aplicando el desfase angular óptimo en su orientación inicial
+    # (Al primer ángulo le sumamos/ajustamos el offset de rotación global detectado)
+    imit_rotated = list(imit)
+    if imit_rotated:
+        d_first, a_first = imit_rotated[0]
+        imit_rotated[0] = (d_first, a_first + deg_opt)
+
+    # === A partir de aquí, usamos 'imit_rotated' en lugar de 'imit' para la ventana deslizante ===
     if Nc >= No:
-        imit_healed = heal_pattern(imit) # Solo reparamos si está completa
+        imit_healed = heal_pattern(imit_rotated)
         Nmin = No
         for k in range(Nc):
             shifted_imit = imit_healed[k:] + imit_healed[:k]
@@ -228,23 +338,16 @@ def evaluate_against_reference(orig, imit):
                 best_metrics = (Ql, Qa, Qs, Qi)
                 best_aligned_imit = eval_imit
                 
-    # Evaluar cuando Imitado < Original (Búsqueda de subsecuencia)
     else:
         Nmin = Nc
         eval_orig_cycled = orig_healed + orig_healed
-        # NO usamos heal_pattern en el imitado, lo evaluamos tal cual llegó
-        eval_imit = list(imit)
+        eval_imit = list(imit_rotated)
         
-        # Deslizamos la figura imitada (sin romperla) a lo largo de las combinaciones del original
         for offset in range(No):
             sub_orig = eval_orig_cycled[offset : offset + Nmin]
-            
             eval_orig_tmp = list(sub_orig)
             eval_imit_tmp = list(eval_imit)
             
-            # Para comparar justamente, forzamos que el primer ángulo de esta 
-            # rebanada temporal del original tenga la misma orientación base que el imitado.
-            # (eval_imit_tmp[0][1] es el ángulo físico que el robot reportó).
             base_angle = eval_imit_tmp[0][1]
             eval_orig_tmp[0] = (eval_orig_tmp[0][0], base_angle)
             
@@ -252,9 +355,7 @@ def evaluate_against_reference(orig, imit):
             sum_diff_l = sum(abs(eval_orig_tmp[m][0] - eval_imit_tmp[m][0]) for m in range(Nmin))
             Ql = 1.0 - (sum_diff_l / sum_l_o) if sum_l_o > 0 else (1.0 if sum_diff_l == 0 else 0.0)
             
-            # Evaluamos ángulos a partir del índice 1, ya que el índice 0 lo acabamos de igualar
             start_idx = 1 
-            
             if Nmin > start_idx:
                 valid_m = range(start_idx, Nmin)
                 sum_a_o = sum(abs(eval_orig_tmp[m][1]) for m in valid_m)
@@ -268,7 +369,6 @@ def evaluate_against_reference(orig, imit):
             if Qi > best_qi:
                 best_qi = Qi
                 best_metrics = (Ql, Qa, Qs, Qi)
-                # Conservamos el arreglo imitado intacto, con sus ángulos originales
                 best_aligned_imit = eval_imit_tmp
                 
     return best_aligned_imit, best_metrics

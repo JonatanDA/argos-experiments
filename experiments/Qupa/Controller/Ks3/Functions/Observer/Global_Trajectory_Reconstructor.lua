@@ -17,6 +17,7 @@ local LOG_ARBITRO          = 2     -- 3. 0: Nada, 1: Resumen ganador, 2: Detalle
 local LOG_TRADUCCION       = true  -- 4. true/false: Imprimir o no la traducción física de los patrones finales
 local LOG_RECURSION_DEBUG  = false -- 5. true/false: Activa impresiones para evitar congelamientos en M2
 local ENABLE_DYNAMIC_CLOSURE = true -- 6. true/false: Activa el cierre inteligente buscando el segmento más cercano al origen
+local FORCE_CLOSE_IRREGULAR = false -- 7. true/false: Activa el cierre forzado añadiendo un segmento final hacia el origen (M1/M2).
 
 
 -- ============================================================================
@@ -259,23 +260,23 @@ local function calibrar_hiperparametros(freq_array, current_ngram_db, cfg)
         log(" [TERMOSTATO] AUTO-CALIBRACIÓN DEL ENJAMBRE")
         log("=========================================")
         log("  [1] Extracción de Métricas Base:")
-        log(string.format("      - Frecuencia Máxima Dominante: %d", max_frecuencia))
+        log(string.format("Frecuencia Máxima Dominante: %d", max_frecuencia))
         for _, ngr in ipairs(ngrams_dominantes) do
             log(string.format("        -> Corresponde al N-Grama: %s", format_ngram(ngr)))
         end
-        log(string.format("      - Frecuencia Promedio Global: %.2f", prom_frecuencia))
-        log(string.format("      - Volumen Total (Cantidad de N-Gramas): %d", suma_frecuencias))
-        log(string.format("      - N-Gramas Únicos: %d", #freq_array))
-        log(string.format("      - N-Gramas con Simetría (Periodicos): %d", pureza_total))
+        log(string.format("Frecuencia Promedio Global: %.2f", prom_frecuencia))
+        log(string.format("Volumen Total (Cantidad de N-Gramas): %d", suma_frecuencias))
+        log(string.format("N-Gramas Únicos: %d", #freq_array))
+        log(string.format("N-Gramas con Simetría (Periodicos): %d", pureza_total))
         
         log("\n  [2] Diagnóstico del Entorno (Fórmulas):")
-        log("      * Índice de Orden: Mide qué tan repetitivos son los datos (1.0 = patrón dominante claro, 0 = caos).")
+        log("Índice de Orden: Mide qué tan repetitivos son los datos (1.0 = patrón dominante claro, 0 = caos).")
         log(string.format("        -> 1.0 - (Únicos [%d] / Volumen [%d]) = %.2f", #freq_array, suma_frecuencias, indice_orden))
-        log("      * Ratio de Pureza: Mide la proporción de geometrías perfectas (como polígonos cerrados).")
+        log("Ratio de Pureza: Mide la proporción de geometrías perfectas (como polígonos cerrados).")
         log(string.format("        -> Periodicos [%d] / Volumen [%d] = %.2f", pureza_total, suma_frecuencias, ratio_pureza))
 
         log("\n  [3] Fórmulas y Resultados Aplicados:")
-        log("      * Umbral de Ruido: Porcentaje mínimo de repetición para que un dato NO sea descartado.")
+        log("Umbral de Ruido: Porcentaje mínimo de repetición para que un dato NO sea descartado.")
         log(string.format("        > FÓRMULA UMBRAL : Base(%.2f) + [Caos(%.2f) * Max_Pen(%.2f)] = %.1f%%.", 
             RUIDO_BASE, nivel_caos, RUIDO_PENALIZACION_MAX, ARBITER_CONFIG.RUIDO_UMBRAL_RELATIVO * 100))
         log(string.format("        > LÍMITE ABSOLUTO: %.1f%% de %d repeticiones (frecuencia dominante).", ARBITER_CONFIG.RUIDO_UMBRAL_RELATIVO * 100, max_frecuencia))
@@ -537,6 +538,101 @@ local function select_best_solution_m2(solutions, cfg)
     return unique_list[1]
 end
 
+-- =========================================================================
+-- FUNCIONES DE EVALUACIÓN FÍSICA / CIERRE DE POLÍGONOS
+-- =========================================================================
+local function is_fragment_closed(struct, cfg)
+    -- Simula el recorrido físico para saber si termina cerca del punto inicial.
+    local values = struct.value
+    local current_type = struct.type
+    
+    local temp_dist = 0; local temp_ang = 0
+    local expecting_dist = (current_type == 0)
+    local params = {}
+    
+    for i, val in ipairs(values) do
+        if expecting_dist then
+            temp_dist = val
+            table.insert(params, { temp_dist, temp_ang })
+            temp_ang = 0
+            expecting_dist = false
+        else
+            temp_ang = val
+            expecting_dist = true
+        end
+    end
+    
+    if #params < 3 then return false end
+    
+    local x, y = 0, 0
+    local theta_deg = 0
+    for i = 1, #params do
+        local d = params[i][1]
+        local a = params[i][2]
+        theta_deg = theta_deg + a
+        local theta_rad = math.rad(theta_deg)
+        x = x + d * math.cos(theta_rad)
+        y = y + d * math.sin(theta_rad)
+    end
+    
+    local dist_to_origin = math.sqrt(x^2 + y^2)
+    local tol = (cfg and cfg.CONFIG and cfg.CONFIG.TOL_DIST) and cfg.CONFIG.TOL_DIST or 15.0
+    return dist_to_origin <= tol
+end
+
+local function force_close_fragment(struct, cfg)
+    local values = struct.value
+    local current_type = struct.type
+    
+    local temp_dist = 0; local temp_ang = 0
+    local expecting_dist = (current_type == 0)
+    local params = {}
+    
+    for i, val in ipairs(values) do
+        if expecting_dist then
+            temp_dist = val
+            table.insert(params, { temp_dist, temp_ang })
+            temp_ang = 0
+            expecting_dist = false
+        else
+            temp_ang = val
+            expecting_dist = true
+        end
+    end
+    
+    local x, y = 0, 0
+    local theta_deg = 0
+    for i = 1, #params do
+        local d = params[i][1]
+        local a = params[i][2]
+        theta_deg = theta_deg + a
+        local theta_rad = math.rad(theta_deg)
+        x = x + d * math.cos(theta_rad)
+        y = y + d * math.sin(theta_rad)
+    end
+    
+    local dist_to_origin = math.sqrt(x^2 + y^2)
+    local tol = (cfg and cfg.CONFIG and cfg.CONFIG.TOL_DIST) and cfg.CONFIG.TOL_DIST or 15.0
+    if dist_to_origin <= tol then return end -- Ya cierra, no requiere forzar
+    
+    local target_angle_rad = math.atan2(-y, -x)
+    local target_angle_deg = math.deg(target_angle_rad)
+    
+    local turn_angle = target_angle_deg - theta_deg
+    turn_angle = (turn_angle + 180) % 360 - 180
+    
+    if expecting_dist then
+        -- Sobrescribe el ángulo colgante con la dirección correcta hacia el origen
+        values[#values] = turn_angle
+        table.insert(values, dist_to_origin)
+    else
+        table.insert(values, turn_angle)
+        table.insert(values, dist_to_origin)
+    end
+end
+
+-- =========================================================================
+
 local function solve_smart_backtracking_all(initial_pool, cfg, dynamic_min_overlap)
     if LOG_RECURSION_DEBUG then
         print(string.format("[DEBUG M2] -> Iniciando Backtracking M2. Pool: %d | Solape Requerido: %d", #initial_pool, dynamic_min_overlap))
@@ -756,8 +852,31 @@ function GlobalReconstructor.run(robot_id, stored_data, cfg)
     end
     
     if #raw_pool == 0 then return false, "", {} end
+
+    -- =========================================================
+    -- PASO 1: REDUCCIÓN DE FRAGMENTOS (PRE-PROCESAMIENTO)
+    -- =========================================================
+    local group_logs = {}
+    local reduced_pool = {}
+    reduced_pool, group_logs = reduce_fragments_pool(raw_pool, cfg)
     
-    build_global_ngram_db(raw_pool, cfg)
+    if LOG_TERMOSTATO then
+        log("\n=========================================")
+        log(" [REDUCCIÓN DE FRAGMENTOS (PRE-PROCESAMIENTO)]")
+        if #group_logs > 0 then
+            for num, g_log in ipairs(group_logs) do
+                local ids_str = table.concat(g_log.ids, ", ")
+                log(string.format(" promedio %d = fragmentos: %s = %s", num, ids_str, g_log.result_str))
+            end
+        else
+            log(" >> No se encontraron sub-cadenas para reducir. Todos los fragmentos son únicos.")
+        end
+    end
+
+    -- =========================================================
+    -- PASO 2: TERMOSTATO Y FILTRO DE RUIDO
+    -- =========================================================
+    build_global_ngram_db(reduced_pool, cfg)
     
     local freq_array = {}
     for _, ngr in ipairs(ngram_db) do table.insert(freq_array, ngr.count) end
@@ -769,7 +888,7 @@ function GlobalReconstructor.run(robot_id, stored_data, cfg)
     local clean_pool = {}
     local discarded_fragments = {} 
     
-    for _, struct in ipairs(raw_pool) do
+    for _, struct in ipairs(reduced_pool) do
         local fragment_ngrams, _ = extract_ngrams_from_fragment(struct, cfg)
         local is_noisy = false
         local failed_ngram_count = 0
@@ -818,7 +937,7 @@ function GlobalReconstructor.run(robot_id, stored_data, cfg)
                 log(string.format(" Fragmento %s -> %s", info.id, info.str))
                 log("   Frecuencia de sus secuencias (N-Gramas):")
                 for _, ngr_info in ipairs(info.ngrams) do
-                    log(string.format("     - %s -> Frecuencia: %d", ngr_info.str, ngr_info.count))
+                    log(string.format("   %s -> Frecuencia: %d", ngr_info.str, ngr_info.count))
                 end
                 log(string.format("   >> DESCARTADO: Debido a que la secuencia %s tenía %d repeticiones (frecuencia mínima debió ser %.2f).", 
                     info.failed_str, info.failed_count, info.min))
@@ -827,22 +946,6 @@ function GlobalReconstructor.run(robot_id, stored_data, cfg)
             log("\n >> Ningún fragmento fue eliminado. Todos superaron el umbral de ruido mínimo (" .. string.format("%.2f", limite_ruido) .. ").")
         end
         log("=========================================")
-    end
-    
-    local group_logs = {}
-    clean_pool, group_logs = reduce_fragments_pool(clean_pool, cfg)
-    
-    if LOG_TERMOSTATO then
-        log("\n=========================================")
-        log(" [REDUCCIÓN DE FRAGMENTOS (PRE-PROCESAMIENTO)]")
-        if #group_logs > 0 then
-            for num, g_log in ipairs(group_logs) do
-                local ids_str = table.concat(g_log.ids, ", ")
-                log(string.format(" promedio %d = fragmentos: %s = %s", num, ids_str, g_log.result_str))
-            end
-        else
-            log(" >> No se encontraron sub-cadenas para reducir. Todos los fragmentos son únicos.")
-        end
         
         log("\n=========================================")
         log(" [POOL FINAL POST-REDUCCIÓN Y FILTRO]")
@@ -864,101 +967,127 @@ function GlobalReconstructor.run(robot_id, stored_data, cfg)
         for _, v in ipairs(clean_pool) do total_data_volume = total_data_volume + v.count end
         if total_data_volume == 0 then break end
 
-        build_global_ngram_db(clean_pool, cfg)
-        local m3_score, m3_hypothesis, m3_covered_ids = evaluar_hipotesis_m3(clean_pool, ngram_db, total_data_volume, iteration, cfg)
-
-        local explorer_score = -1
-        local explorer_hypothesis = nil
-        local explorer_name = "M1"
-        local explorer_pool_result = {}
-        local m1_fallback_reason = ""
-       
-        local idx_orden = ARBITER_CONFIG.INDICE_ORDEN or 1.0
-        local dynamic_min_overlap = MIN_OVERLAP_M2
-        local dynamic_max_fragments = MAX_FRAGMENTS_M2
-       
-        if idx_orden <= 0.4 then
-            dynamic_min_overlap = math.max(dynamic_min_overlap, 3)
-            dynamic_max_fragments = math.min(dynamic_max_fragments, 5)
-        elseif idx_orden <= 0.8 then
-            dynamic_min_overlap = math.max(dynamic_min_overlap, 2)
-            dynamic_max_fragments = math.min(dynamic_max_fragments, 7)
-        end
-       
-        if LOG_RECURSION_DEBUG then
-            print(string.format("\n[DEBUG ADAPTATIVO] Indice de Orden: %.2f | M2 ajustado a Solape >= %d, Límite Fragmentos <= %d", idx_orden, dynamic_min_overlap, dynamic_max_fragments))
-        end
-
-        if #clean_pool <= dynamic_max_fragments then
-            local m2_solution = solve_smart_backtracking_all(clean_pool, cfg, dynamic_min_overlap)
-           
-            if m2_solution and #m2_solution.pool_result > 0 then
-                explorer_pool_result = m2_solution.pool_result
-                explorer_name = "M2"
-            else
-                m1_fallback_reason = string.format(" [Forzado a M1: M2 abortó al superar %d llamadas recursivas]", MAX_RECURSIONS_M2)
-                explorer_pool_result = solve_greedy(clean_pool, cfg)
-            end
-        else
-            m1_fallback_reason = string.format(" [Forzado a M1: %d fragmentos superan el límite dinámico de %d fragmentos]", #clean_pool, dynamic_max_fragments)
-            explorer_pool_result = solve_greedy(clean_pool, cfg)
-        end
-
-        if #explorer_pool_result > 0 then
-            table.sort(explorer_pool_result, function(a,b) return (a.count or 1) > (b.count or 1) end)
-            explorer_hypothesis = explorer_pool_result[1]
-            local coverage_norm_exp = (explorer_hypothesis.count or 1) / total_data_volume
-            local complexity_norm_exp = #explorer_hypothesis.value / total_data_volume
-            explorer_score = (coverage_norm_exp * 1.0) - (complexity_norm_exp * PESO_COMPLEJIDAD)
-        end
-
         local winner_struct = nil
         local ids_to_remove = {}
+        local is_m3_winner = false
+        local is_single_closed = false
 
-        if m3_score > explorer_score and m3_score >= ARBITER_CONFIG.MIN_SCORE then
-            winner_struct = m3_hypothesis
-            ids_to_remove = m3_covered_ids
-           
-            if LOG_ARBITRO == 2 then
-                log(string.format("\n [ÁRBITRO DETALLE] Evaluación de la Iteración %d", iteration))
-                log(string.format("   - Puntaje M3 (Regular): %.4f", m3_score))
-                log(string.format("   - Puntaje %s (Irregular): %.4f", explorer_name, explorer_score))
-                log(string.format("   - Mínimo Requerido: %.4f", ARBITER_CONFIG.MIN_SCORE))
-                log(string.format("   - Camino propuesto M3: %s", fmt_struct(m3_hypothesis)))
-                if explorer_hypothesis then
-                    log(string.format("   - Camino propuesto %s: %s", explorer_name, fmt_struct(explorer_hypothesis)))
+        -- CASO ESPECIAL: Si solo queda un fragmento, verificar si cierra naturalmente por sí mismo
+        if #clean_pool == 1 then
+            is_single_closed = is_fragment_closed(clean_pool[1], cfg)
+            if is_single_closed then
+                winner_struct = clean_pool[1]
+                ids_to_remove = clean_pool[1].consumed_ids
+                if LOG_ARBITRO >= 1 then
+                    log(string.format("\n [ÁRBITRO] >>> ¡Gana Único Fragmento (Cierre Natural)! -> %s", fmt_struct(winner_struct)))
                 end
             end
+        end
+
+        -- Si no hubo cierre directo de fragmento único, evaluamos con M3, M1 y M2
+        if not is_single_closed then
+            build_global_ngram_db(clean_pool, cfg)
+            local m3_score, m3_hypothesis, m3_covered_ids = evaluar_hipotesis_m3(clean_pool, ngram_db, total_data_volume, iteration, cfg)
+
+            local explorer_score = -1
+            local explorer_hypothesis = nil
+            local explorer_name = "M1"
+            local explorer_pool_result = {}
+            local m1_fallback_reason = ""
            
-            if LOG_ARBITRO >= 1 then
-                log(string.format("\n [ÁRBITRO] >>> ¡Gana M3 (Geometría Regular)! -> %s", fmt_struct(winner_struct)))
+            local idx_orden = ARBITER_CONFIG.INDICE_ORDEN or 1.0
+            local dynamic_min_overlap = MIN_OVERLAP_M2
+            local dynamic_max_fragments = MAX_FRAGMENTS_M2
+           
+            if idx_orden <= 0.4 then
+                dynamic_min_overlap = math.max(dynamic_min_overlap, 3)
+                dynamic_max_fragments = math.min(dynamic_max_fragments, 5)
+            elseif idx_orden <= 0.8 then
+                dynamic_min_overlap = math.max(dynamic_min_overlap, 2)
+                dynamic_max_fragments = math.min(dynamic_max_fragments, 7)
             end
            
-        elseif explorer_score >= m3_score and explorer_score >= ARBITER_CONFIG.MIN_SCORE then
-            winner_struct = explorer_hypothesis
-            ids_to_remove = explorer_hypothesis.consumed_ids
-           
-            if LOG_ARBITRO == 2 then
-                log(string.format("\n [ÁRBITRO DETALLE] Evaluación de la Iteración %d", iteration))
-                log(string.format("   - Puntaje M3 (Regular): %.4f", m3_score))
-                log(string.format("   - Puntaje %s (Irregular): %.4f", explorer_name, explorer_score))
-                log(string.format("   - Mínimo Requerido: %.4f", ARBITER_CONFIG.MIN_SCORE))
-                if m3_hypothesis then
-                    log(string.format("   - Camino propuesto M3: %s", fmt_struct(m3_hypothesis)))
+            if LOG_RECURSION_DEBUG then
+                print(string.format("\n[DEBUG ADAPTATIVO] Indice de Orden: %.2f | M2 ajustado a Solape >= %d, Límite Fragmentos <= %d", idx_orden, dynamic_min_overlap, dynamic_max_fragments))
+            end
+
+            if #clean_pool <= dynamic_max_fragments then
+                local m2_solution = solve_smart_backtracking_all(clean_pool, cfg, dynamic_min_overlap)
+               
+                if m2_solution and #m2_solution.pool_result > 0 then
+                    explorer_pool_result = m2_solution.pool_result
+                    explorer_name = "M2"
+                else
+                    m1_fallback_reason = string.format(" [Forzado a M1: M2 abortó al superar %d llamadas recursivas]", MAX_RECURSIONS_M2)
+                    explorer_pool_result = solve_greedy(clean_pool, cfg)
                 end
-                log(string.format("   - Camino propuesto %s: %s", explorer_name, fmt_struct(explorer_hypothesis)))
+            else
+                m1_fallback_reason = string.format(" [Forzado a M1: %d fragmentos superan el límite dinámico de %d fragmentos]", #clean_pool, dynamic_max_fragments)
+                explorer_pool_result = solve_greedy(clean_pool, cfg)
             end
-           
+
+            if #explorer_pool_result > 0 then
+                table.sort(explorer_pool_result, function(a,b) return (a.count or 1) > (b.count or 1) end)
+                explorer_hypothesis = explorer_pool_result[1]
+                local coverage_norm_exp = (explorer_hypothesis.count or 1) / total_data_volume
+                local complexity_norm_exp = #explorer_hypothesis.value / total_data_volume
+                explorer_score = (coverage_norm_exp * 1.0) - (complexity_norm_exp * PESO_COMPLEJIDAD)
+            end
+
+            if m3_score > explorer_score and m3_score >= ARBITER_CONFIG.MIN_SCORE then
+                winner_struct = m3_hypothesis
+                ids_to_remove = m3_covered_ids
+                is_m3_winner = true
+               
+                if LOG_ARBITRO == 2 then
+                    log(string.format("\n [ÁRBITRO DETALLE] Evaluación de la Iteración %d", iteration))
+                    log(string.format("Puntaje M3 (Regular): %.4f", m3_score))
+                    log(string.format("Puntaje %s (Irregular): %.4f", explorer_name, explorer_score))
+                    log(string.format("Mínimo Requerido: %.4f", ARBITER_CONFIG.MIN_SCORE))
+                    log(string.format("Camino propuesto M3: %s", fmt_struct(m3_hypothesis)))
+                    if explorer_hypothesis then
+                        log(string.format("Camino propuesto %s: %s", explorer_name, fmt_struct(explorer_hypothesis)))
+                    end
+                end
+               
+                if LOG_ARBITRO >= 1 then
+                    log(string.format("\n [ÁRBITRO] >>> ¡Gana M3 (Geometría Regular)! -> %s", fmt_struct(winner_struct)))
+                end
+               
+            elseif explorer_score >= m3_score and explorer_score >= ARBITER_CONFIG.MIN_SCORE then
+                winner_struct = explorer_hypothesis
+                ids_to_remove = explorer_hypothesis.consumed_ids
+               
+                if LOG_ARBITRO == 2 then
+                    log(string.format("\n [ÁRBITRO DETALLE] Evaluación de la Iteración %d", iteration))
+                    log(string.format("Puntaje M3 (Regular): %.4f", m3_score))
+                    log(string.format("Puntaje %s (Irregular): %.4f", explorer_name, explorer_score))
+                    log(string.format("Mínimo Requerido: %.4f", ARBITER_CONFIG.MIN_SCORE))
+                    if m3_hypothesis then
+                        log(string.format("Camino propuesto M3: %s", fmt_struct(m3_hypothesis)))
+                    end
+                    log(string.format("Camino propuesto %s: %s", explorer_name, fmt_struct(explorer_hypothesis)))
+                end
+               
+                if LOG_ARBITRO >= 1 then
+                    local reason_str = (explorer_name == "M1") and m1_fallback_reason or ""
+                    log(string.format("\n [ÁRBITRO] >>> ¡Gana %s (Ruta Irregular)%s! -> %s", explorer_name, reason_str, fmt_struct(winner_struct)))
+                end
+            else
+                if LOG_ARBITRO == 2 then
+                    log(string.format("\n [ÁRBITRO DETALLE] Fin - Ninguno superó el umbral mínimo (%.4f)", ARBITER_CONFIG.MIN_SCORE))
+                    log(string.format("Puntaje M3: %.4f | Puntaje %s: %.4f", m3_score, explorer_name, explorer_score))
+                end
+                break
+            end
+        end
+
+        -- CIERRE FORZADO: Si el ganador no fue M3, no cierra naturalmente y la bandera de control está activa
+        if winner_struct and FORCE_CLOSE_IRREGULAR and not is_m3_winner and not is_single_closed then
+            force_close_fragment(winner_struct, cfg)
             if LOG_ARBITRO >= 1 then
-                local reason_str = (explorer_name == "M1") and m1_fallback_reason or ""
-                log(string.format("\n [ÁRBITRO] >>> ¡Gana %s (Ruta Irregular)%s! -> %s", explorer_name, reason_str, fmt_struct(winner_struct)))
+                log(string.format(" [CIERRE FORZADO] Ruta irregular actualizada (Regresa al origen) -> %s", fmt_struct(winner_struct)))
             end
-        else
-            if LOG_ARBITRO == 2 then
-                log(string.format("\n [ÁRBITRO DETALLE] Fin - Ninguno superó el umbral mínimo (%.4f)", ARBITER_CONFIG.MIN_SCORE))
-                log(string.format("   - Puntaje M3: %.4f | Puntaje %s: %.4f", m3_score, explorer_name, explorer_score))
-            end
-            break
         end
 
         table.insert(all_final_results, winner_struct)

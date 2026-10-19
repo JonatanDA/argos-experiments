@@ -115,7 +115,7 @@ TRACKER_DEPENDENCIES = {
 # DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Tr7/Tr7.lua"
 
 DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Ks_A.argos"
-DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Ks3/Ks3.lua"
+DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Ks4/Ks4.lua"
 
 # DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Prueba1.argos"
 # DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Pruebas/Move.lua"

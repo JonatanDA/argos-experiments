@@ -61,7 +61,7 @@ porcentaje              = 0.75    -- 1 < porcentaje < 0.33 , indica que tanto el
 
 -- Métricas del módulo de ruido en camara de blobs del aprendiz: noise_manager.lua
 noise_cfg = {
-    ENABLE_NOISE            = false ,    -- Si es false, el robot ve perfecto (Ground Truth)
+    ENABLE_NOISE            = true  ,    -- Si es false, el robot ve perfecto (Ground Truth)
     USE_DISTANCE_DEPENDENT  = true  ,    -- El ruido aumenta si el objeto está lejos
     USE_OUTLIERS            = false ,    -- Activar lecturas "fantasma" o fallos graves
     USE_BIAS                = true  ,    -- Error sistemático (ej. sensor mal calibrado +2cm siempre)
@@ -94,7 +94,7 @@ CONFIG = {
     
     -- Margen de error permitido en ángulos (en grados).
     -- Implicación: Tolerancia angular aceptada para determinar si dos rectas, tramos son colineales.
-    TOL_ANG = 15,
+    TOL_ANG = 20,
 }
 
 ------------------------------
@@ -104,10 +104,10 @@ distance_factor = 1  -- Factor de escala para ajustar el tamaño de las figuras 
 if robot.id == "Qupa4" then
 
 elseif robot.id == "Qupa1" or robot.id == "Qupa2" or robot.id == "Qupa3" or robot.id == "Qupa5" then
-    figura = "triangulo_irregular_1" -- "triangulo_regular" -- "octagono" -- "triangulo_irregular_1" --"Pentágono_irregular"  -- "Heptágono"-- "" -- "trayectoria_1" 
+    figura = "Heptágono" -- "triangulo_regular" -- "octagono" -- "triangulo_irregular_1" --"Pentágono_irregular"  -- "Heptágono"-- "" -- "trayectoria_1" 
     distance_factor = 1
 else
-    figura = "triangulo_regular" -- "triangulo_regular" -- "octagono" -- "triangulo_irregular_1" --"Pentágono_irregular"  -- "Heptágono"-- "" -- "trayectoria_1" 
+    figura = "" -- "triangulo_regular" -- "octagono" -- "triangulo_irregular_1" --"Pentágono_irregular"  -- "Heptágono"-- "" -- "trayectoria_1" 
     distance_factor = 1 
 end
 
@@ -532,9 +532,9 @@ function Ejecutar_comportamiento(params_P)
         else
             PI_end = true
             robot.leds.set_all_colors("black")
-            log( " -------------------------------------------------------------------------" )
-            log("Patrón no detectado :( " .. robot.id)
-            log( " -------------------------------------------------------------------------" )
+            -- log( " -------------------------------------------------------------------------" )
+            -- log("Patrón no detectado :( " .. robot.id)
+            -- log( " -------------------------------------------------------------------------" )
         end
     end
 
