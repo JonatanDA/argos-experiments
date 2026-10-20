@@ -1,0 +1,30 @@
+--========================================================================
+-- ARCHIVO DE ACTUALIZACIÓN LUA (Reemplazar en Ks5.lua)
+--========================================================================
+
+-- Hemos cambiado las comas "," por DOS PUNTOS ":" en la concatenación 
+-- de los blobs para evitar el choque con el separador decimal.
+
+function Print_tracker_python(obs_ang_offset_global, x_mark, y_mark, yellow_blobs, green_blobs)
+    local py_str = "[python];observation;" .. tostring(obs_ang_offset_global) .. ";" .. tostring(x_mark) .. ";" .. tostring(y_mark) .. ";"
+    
+    local yb_strs = {}
+    if yellow_blobs then
+        for _, b in ipairs(yellow_blobs) do
+            -- AQUI ESTÁ EL CAMBIO (usamos ":" para separar los campos)
+            table.insert(yb_strs, tostring(b.angle) .. ":" .. tostring(b.distance) .. ":" .. tostring(b.type or 2))
+        end
+    end
+    py_str = py_str .. table.concat(yb_strs, "|") .. ";"
+    
+    local gb_strs = {}
+    if green_blobs then
+        for _, b in ipairs(green_blobs) do
+            -- AQUI ESTÁ EL CAMBIO (usamos ":" para separar los campos)
+            table.insert(gb_strs, tostring(b.angle) .. ":" .. tostring(b.distance))
+        end
+    end
+    py_str = py_str .. table.concat(gb_strs, "|")
+    
+    print(py_str)
+end

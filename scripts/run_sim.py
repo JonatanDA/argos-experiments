@@ -56,15 +56,20 @@ EVALUATOR_DEPENDENCIES = {
 # ---------- 2. DICCIONARIO DE TRACKERS Y DEPENDENCIAS LUA ----------
 # =============================================================================
 TRACKER_DEPENDENCIES = {
-    "tracker_paciencia.py": {
-        "descripcion": " Muestra la paciencia del aprendiz durante el aprendizaje",
-        "funciones_lua": ["Print_tracker_paciencia"],
+    "tracker_python_gestor.py": {
+        "descripcion": "",
+        "funciones_lua": ["Print_tracker_python"],
         "variables_lua": []
     },
     "tracker_trayectory.py": {
         "descripcion": "Rastrea y grafica la trayectoria 2D (x,y) global del master y/o aprendiz.",
         "funciones_lua": ["Print_tracker_trayectory_data"],
         "variables_lua": ["displayed_data"]
+    },
+    "tracker_paciencia.py": {
+        "descripcion": " Muestra la paciencia del aprendiz durante el aprendizaje",
+        "funciones_lua": ["Print_tracker_paciencia"],
+        "variables_lua": []
     },
     "tracker_AL_PID.py": {
         "descripcion": "",
@@ -115,7 +120,7 @@ TRACKER_DEPENDENCIES = {
 # DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Tr7/Tr7.lua"
 
 DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Ks_A.argos"
-DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Ks4/Ks4.lua"
+DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Ks5/Ks5.lua"
 
 # DEFAULT_ARGOS_FILE              = "experiments/Qupa/Argos/Prueba1.argos"
 # DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Pruebas/Move.lua"
@@ -123,6 +128,11 @@ DEFAULT_LUA_SCRIPT              = "experiments/Qupa/Controller/Ks4/Ks4.lua"
 # ---------- CONFIGURACIÓN DE TRACKERS ACTIVOS ----------
 # =============================================================================
 TRACKERS = [
+
+    {
+        "script": "scripts/tracker_python_gestor.py",
+        "args": []
+    },
     {
         "script": "scripts/tracker_trayectory.py",
         "args": []
@@ -193,7 +203,7 @@ MAX_IDLE_TIMEOUT_SEC            = 240
 # 1: Recomendado (Muestra eventos vitales: inicios, cierres, guardados de evaluadores).
 # 2: Detallado (Modo 1 + Prints específicos etiquetados de los Trackers, sin mezclar salidas ruidosas).
 # 3: Todo (Modo 2 + Datos puros de ARGoS como variables continuas, timers, alertas internas, etc).
-NIVEL_LOG = 3
+NIVEL_LOG = 2
 
 tracker_activity = {}
 print_lock = threading.Lock()

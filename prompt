@@ -1,117 +1,1894 @@
-Perfecto. Asi funciona muy bien, ayudame a agregar unos detalles.
+si por favor. y aprovechemos para aplicar unas actualizaciones en python gestor.
 
--- Variables globales de estado para el Random Walk
-RW_b1 = 0
-Rw_target_angle = 0
+Vamos a sincronizarlo con el lua. En terminal se imprime esta linea:
+Timer=50
+[trajectory];Apprentice;-0,82760278093917;-0,82074653295323
+[python];observation;0,45378560551853;37,23863676594;37,926171831687;-53,665720951031:38,480449736499:2|87,799739173769:37,960050636928:2;
+[PACIENCIA](147,5) segundos.
+[active_learning];4;Apprentice;-0,82760278093917;-0,82074653295323;0,0063105392746988;0,011197481308014
+[trajectory];Master1;0,71319677253525;0,20059227739122
+[trajectory];Master2;0,2192019499155;0,72658156888155
+Timer=51
+[trajectory];Apprentice;-0,82760278093917;-0,82074653295323
+[python];observation;0,45378560551853;37,23863676594;37,926171831687;-58,24637064116:37,521066875495:2|92,929869983291:40,771032571332:2;
+[PACIENCIA](147,25) segundos.
+[active_learning];4;Apprentice;-0,82760278093917;-0,82074653295323;0,0056327855648795;0,010866918736714
+[trajectory];Master1;0,68972515124142;0,17906396013205
+[trajectory];Master2;0,17516109530697;0,73609487490236
+Timer=52
+[trajectory];Apprentice;-0,82760278093917;-0,82074653295323
+[python];observation;0,45378560551853;37,23863676594;37,926171831687;-49,925065994986:36,739470865432:2|92,363252165611:37,484009918491:2;
+[PACIENCIA](147,0) segundos.
+[active_learning];4;Apprentice;-0,82760278093917;-0,82074653295323;0,0040272106890765;0,014158835072516
+[trajectory];Master1;0,70821328288962;0,23026790987454
+[trajectory];Master2;0,19431485620707;0,70910355430198
 
--- Variables de Memoria para la lógica Anti-Atascos
-RW_stuck_counter = 0     -- Cuenta cuántas veces seguidas choca en un corto periodo
-RW_clear_path_timer = 0  -- Mide cuántos "ticks" ha avanzado sin chocar
 
-function RandomWalking()
-    -- Obtenemos la tabla detallada de la nueva función de proximidad
-    local datos_prox = proximidad(true)
+especificamente esto: Timer=xx , con esto calcularemos la paciencia en el python gestor, y cuando en la simulación se informa que se acaba la paciencia y lanza reconstrucción que a su vez lanza reconstrucción en python, imprime una linea que informe cual fue la paciencia que tenia con python para ver si coinciden o si quizá para ese python se debió terminar ya o si aún sobraba, Esto es solo informativo de momento, no influye.
 
-    if RW_b1 == 0 then
-        -- ==========================================================
-        -- ESTADO 0: AVANZANDO Y EVALUANDO
-        -- ==========================================================
+import math
+import sys
+import Observer.ImitationQuality as ImitationQuality
+from Observer.Global_Trajectory_Reconstructor import GlobalTrajectoryReconstructor
+from Observer.Parameter_Storage import ParameterStorage
+from Observer.Point_Cloud_Segmenter import PointCloudSegmenter
+from Observer.Segment_Parameterizer import SegmentParameterizer
+
+cfg = {'CONFIG': {'TOL_DIST': 15, 'TOL_ANG': 15}, 'use_subsampling': False}
+seg_cfg = {
+    'distance_treshold': 15,
+    'limite_maximo_ventana': 30,
+    'use_subsampling': False,
+}
+distance_treshold = 20
+
+N_MAX_INTENTOS = 3
+intentos_redundantes = N_MAX_INTENTOS
+K_UMBRAL_SIMILITUD = 0.85
+
+srt_anterior_data = {}
+master_tracking = {}
+all_params = []
+param_store = ParameterStorage()
+
+
+def log_py(msg):
+  print(f'[PYTHON GESTOR] {msg}', flush=True)
+
+
+def soft_reset_observer():
+  """Equivalente a soft_reset_observer() en Lua tras terminar el Random Walk."""
+  global srt_anterior_data, master_tracking
+  srt_anterior_data.clear()
+  master_tracking.clear()
+
+
+def initialize_master_tracking(
+    k, angle_deg, distance, ty, obs_ang_offset_global, x_mark, y_mark
+):
+  angle_rad = math.radians(angle_deg)
+  ang_total = angle_rad + obs_ang_offset_global
+  x_rel = distance * math.cos(ang_total)
+  y_rel = distance * math.sin(ang_total)
+  x = x_rel + x_mark
+  y = y_rel + y_mark
+  master_tracking[k] = {
+      'raw_x': [x],
+      'raw_y': [y],
+      'raw_type': [ty],
+      'Pattern_start_detected': ty == 1,
+      'End_of_pattern_detected': ty == 3,
+      'processed': False,
+      'segmentos': {'movement': [], 'type': [], 'valid': []},
+      'params': [],
+  }
+
+
+def process_single_observation(k, track):
+  clean_mov, clean_type, clean_valid, p_start, p_end = (
+      PointCloudSegmenter.process(
+          k, track['raw_x'], track['raw_y'], track['raw_type'], seg_cfg
+      )
+  )
+  track['segmentos']['movement'] = clean_mov
+  track['segmentos']['type'] = clean_type
+  track['segmentos']['valid'] = clean_valid
+  if p_start:
+    track['Pattern_start_detected'] = True
+  if p_end:
+    track['End_of_pattern_detected'] = True
+
+  if clean_mov and len(clean_mov) > 1:
+    track['params'] = SegmentParameterizer.process_segments(
+        clean_mov, clean_valid
+    )
+    param_store.package_and_add(track['params'], clean_valid, cfg)
+
+
+def trigger_reconstruction():
+  """Se ejecuta directamente al recibir '[python];patience_timeout' desde ARGoS."""
+  global all_params, intentos_redundantes
+  if param_store.is_done():
+    return
+
+  datos_guardados = param_store.get_stored_data()
+  exito, linea_resumen, nuevos_comportamientos, winner_ids = (
+      GlobalTrajectoryReconstructor.run(
+          'Qupa4', datos_guardados, cfg, len(all_params)
+      )
+  )
+
+  hay_comportamiento_nuevo = False
+
+  if exito:
+    param_store.set_done()
+    current_winning_ids = winner_ids if winner_ids else {}
+
+    # Lógica de similitud y redundancia idéntica a Ks5.lua
+    if len(all_params) == 0:
+      hay_comportamiento_nuevo = True
+      for comp in nuevos_comportamientos:
+        all_params.append(comp)
+    else:
+      for nuevo_comp in nuevos_comportamientos:
+        es_conocido = False
+        for comp_conocido in all_params:
+          qi = ImitationQuality.evaluate(comp_conocido, nuevo_comp)
+          if qi >= K_UMBRAL_SIMILITUD:
+            es_conocido = True
+            log_py(
+                ' -> Comportamiento redundante detectado. Similitud Qi ='
+                f' {qi*100:.2f}%'.replace('.', ',')
+            )
+            min_len = min(len(comp_conocido), len(nuevo_comp))
+            for i in range(min_len):
+              comp_conocido[i][0] = (comp_conocido[i][0] + nuevo_comp[i][0]) / 2.0
+              comp_conocido[i][1] = (comp_conocido[i][1] + nuevo_comp[i][1]) / 2.0
+            if len(nuevo_comp) > len(comp_conocido):
+              for i in range(min_len, len(nuevo_comp)):
+                comp_conocido.append([nuevo_comp[i][0], nuevo_comp[i][1]])
+            break
+        if not es_conocido:
+          hay_comportamiento_nuevo = True
+          all_params.append(nuevo_comp)
+          log_py(' >>> COMPORTAMIENTO NUEVO AÑADIDO AL DICCIONARIO <<<')
+  else:
+    current_winning_ids = {}
+
+  if hay_comportamiento_nuevo:
+    intentos_redundantes = N_MAX_INTENTOS
+    log_py('\n===========================================================')
+    log_py(' [FIN CICLO DE APRENDIZAJE] NUEVO COMPORTAMIENTO GUARDADO')
+    log_py(' Iniciando Random Walk para explorar nuevas áreas.')
+    log_py('===========================================================\n\n\n')
+  else:
+    intentos_redundantes -= 1
+    if intentos_redundantes > 0:
+      log_py('\n===========================================================')
+      log_py(' [FIN CICLO DE APRENDIZAJE] REDUNDANCIA O FALLO')
+      if exito:
+        log_py(
+            ' -> Todo era redundante (Ya conocido). Intentos restantes N ='
+            f' {intentos_redundantes}'
+        )
+      else:
+        log_py(
+            ' -> Reconstrucción fallida (Pura basura). Intentos restantes N ='
+            f' {intentos_redundantes}'
+        )
+      log_py(' Iniciando Random Walk para buscar mejor perspectiva.')
+      log_py(
+          '===========================================================\n\n\n'
+      )
+    else:
+      log_py(
+          '\n\n\n==========================================================='
+      )
+      log_py(' [FIN FASE DE APRENDIZAJE] INTENTOS AGOTADOS (N=0)')
+      log_py('===========================================================')
+      log_py('\n===========================================================')
+      log_py(' RESUMEN GLOBAL: COMPORTAMIENTOS APRENDIDOS (DICCIONARIO)  ')
+      log_py('===========================================================')
+      for idx, comp in enumerate(all_params):
+        log_py(f'\n--> Comportamiento [{idx+1}]:')
+        params_str = [
+            f'{{D:{p[0]:.2f}, A:{p[1]:.2f}}}'.replace('.', ',') for p in comp
+        ]
+        log_py('    Parámetros: ' + ', '.join(params_str))
+      log_py('===========================================================\n')
+      intentos_redundantes = N_MAX_INTENTOS
+
+  # Transferir a memoria global y limpiar para el siguiente ciclo (como hace c4 == 2 en Lua)
+  param_store.clear(cfg, current_winning_ids)
+  soft_reset_observer()
+
+
+def procesar_datos_logicos_y_reconstruccion(datos_fisicos):
+  if param_store.is_done():
+    return
+
+  yellow_blobs = datos_fisicos['yellow_blobs']
+  green_blobs = datos_fisicos['green_blobs']
+  obs_ang_offset_global = datos_fisicos['obs_ang_offset_global']
+  x_mark = datos_fisicos['x_mark']
+  y_mark = datos_fisicos['y_mark']
+
+  updated_anterior_indices = {}
+  matched_new_indices = {}
+  candidatos = []
+
+  # Fase B: Actualización de maestros existentes
+  for j, new_data in enumerate(yellow_blobs):
+    ang_total_blob = math.radians(new_data['angle']) + obs_ang_offset_global
+    bx_rel = new_data['distance'] * math.cos(ang_total_blob)
+    by_rel = new_data['distance'] * math.sin(ang_total_blob)
+    bx_global, by_global = bx_rel + x_mark, by_rel + y_mark
+
+    for k, anterior_data in srt_anterior_data.items():
+      if (
+          'angle' in anterior_data
+          and k in master_tracking
+          and master_tracking[k]['raw_x']
+      ):
+        mx_global = master_tracking[k]['raw_x'][-1]
+        my_global = master_tracking[k]['raw_y'][-1]
+        err = math.sqrt(
+            (bx_global - mx_global) ** 2 + (by_global - my_global) ** 2
+        )
+        if err <= distance_treshold:
+          candidatos.append({'blob_idx': j, 'master_idx': k, 'error': err})
+
+  candidatos.sort(key=lambda x: x['error'])
+  for cand in candidatos:
+    j, k = cand['blob_idx'], cand['master_idx']
+    if j not in matched_new_indices and k not in updated_anterior_indices:
+      srt_anterior_data[k].update(yellow_blobs[j])
+      updated_anterior_indices[k] = True
+      matched_new_indices[j] = True
+
+  # Fase C: Crear nuevos maestros
+  for j, new_data in enumerate(yellow_blobs):
+    if j not in matched_new_indices:
+      new_k = len(srt_anterior_data) + 1
+      srt_anterior_data[new_k] = new_data.copy()
+      if 'type' not in srt_anterior_data[new_k]:
+        srt_anterior_data[new_k]['type'] = 2
+      updated_anterior_indices[new_k] = True
+      initialize_master_tracking(
+          new_k,
+          new_data['angle'],
+          new_data['distance'],
+          srt_anterior_data[new_k]['type'],
+          obs_ang_offset_global,
+          x_mark,
+          y_mark,
+      )
+
+  # Fase D: Blobs Verdes (Fin)
+  for green_blob in green_blobs:
+    ang_total_green = math.radians(green_blob['angle']) + obs_ang_offset_global
+    gbx_rel = green_blob['distance'] * math.cos(ang_total_green)
+    gby_rel = green_blob['distance'] * math.sin(ang_total_green)
+    gbx, gby = gbx_rel + x_mark, gby_rel + y_mark
+    for k, md in srt_anterior_data.items():
+      if (
+          'angle' in md
+          and k not in updated_anterior_indices
+          and k in master_tracking
+          and master_tracking[k]['raw_x']
+      ):
+        mx, my = (
+            master_tracking[k]['raw_x'][-1],
+            master_tracking[k]['raw_y'][-1],
+        )
+        if math.sqrt((gbx - mx) ** 2 + (gby - my) ** 2) <= distance_treshold:
+          srt_anterior_data[k]['type'] = 3
+          updated_anterior_indices[k] = True
+          master_tracking[k]['End_of_pattern_detected'] = True
+          break
+
+  # Fase G: Gestión de Pérdidas y Procesamiento de Rutas
+  for k in list(srt_anterior_data.keys()):
+    track = master_tracking.get(k)
+    is_lost = (
+        'angle' in srt_anterior_data[k] and k not in updated_anterior_indices
+    )
+    is_finished = track and track['End_of_pattern_detected']
+
+    if (is_lost or is_finished) and track and not track['processed']:
+      process_single_observation(k, track)
+      track['processed'] = True
+      srt_anterior_data[k] = {}
+
+  # Fase H: Grabación Continua
+  for k in updated_anterior_indices:
+    md = srt_anterior_data[k]
+    track = master_tracking[k]
+    if md and track and not track['processed']:
+      ang_tot = math.radians(md['angle']) + obs_ang_offset_global
+      x_new = md['distance'] * math.cos(ang_tot) + x_mark
+      y_new = md['distance'] * math.sin(ang_tot) + y_mark
+      track['raw_x'].append(x_new)
+      track['raw_y'].append(y_new)
+      track['raw_type'].append(md['type'])
+      if md['type'] == 1:
+        track['Pattern_start_detected'] = True
+      if md['type'] == 3:
+        track['End_of_pattern_detected'] = True
+
+
+def parse_observation_line(line):
+  # Formato: [python];observation;obs_ang_offset_global;x_mark;y_mark;yb_str;gb_str
+  parts = line.strip().split(';')
+  idx = parts.index('[python]')
+  obs_ang_offset_global = float(parts[idx + 2].replace(',', '.'))
+  x_mark = float(parts[idx + 3].replace(',', '.'))
+  y_mark = float(parts[idx + 4].replace(',', '.'))
+
+  yellow_blobs = []
+  if len(parts) > idx + 5 and parts[idx + 5]:
+    for b_str in parts[idx + 5].split('|'):
+      if b_str:
+        ang_s, dist_s, type_s = b_str.split(':')
+        yellow_blobs.append({
+            'angle': float(ang_s.replace(',', '.')),
+            'distance': float(dist_s.replace(',', '.')),
+            'type': int(type_s),
+        })
+
+  green_blobs = []
+  if len(parts) > idx + 6 and parts[idx + 6]:
+    for b_str in parts[idx + 6].split('|'):
+      if b_str:
+        ang_s, dist_s = b_str.split(':')
+        green_blobs.append({
+            'angle': float(ang_s.replace(',', '.')),
+            'distance': float(dist_s.replace(',', '.')),
+        })
+
+  return {
+      'obs_ang_offset_global': obs_ang_offset_global,
+      'x_mark': x_mark,
+      'y_mark': y_mark,
+      'yellow_blobs': yellow_blobs,
+      'green_blobs': green_blobs,
+  }
+
+
+def main():
+  log_py('Iniciado. Escuchando datos de ARGoS en tiempo real...')
+  for line in sys.stdin:
+    if '[python];patience_timeout' in line:
+      trigger_reconstruction()
+    elif '[python];observation;' in line:
+      try:
+        datos_fisicos = parse_observation_line(line)
+        procesar_datos_logicos_y_reconstruccion(datos_fisicos)
+      except Exception as e:
+        log_py(f'[ERROR] Fallo procesando observación: {e}')
+    elif 'End_simulation' in line:
+      break
+
+
+if __name__ == '__main__':
+  main()
+
+import math
+from Observer.Point_Cloud_Segmenter import PointCloudSegmenter
+from Observer.Segment_Parameterizer import SegmentParameterizer
+from Observer.Parameter_Storage import ParameterStorage
+from Observer.Global_Trajectory_Reconstructor import GlobalTrajectoryReconstructor
+import Observer.ImitationQuality as ImitationQuality
+
+cfg = {'CONFIG': {'TOL_DIST': 15, 'TOL_ANG': 15}, 'use_subsampling': False}
+seg_cfg = {'distance_treshold': 15, 'limite_maximo_ventana': 30, 'use_subsampling': False}
+distance_treshold = 20
+max_patience = 160 * 4
+
+current_patience = max_patience
+srt_anterior_data = {}
+master_tracking = {}
+all_params = []
+param_store = ParameterStorage()
+
+def initialize_master_tracking(k, angle_deg, distance, ty, obs_ang_offset_global, x_mark, y_mark):
+    angle_rad = math.radians(angle_deg)
+    ang_total = angle_rad + obs_ang_offset_global
+    x_rel = distance * math.cos(ang_total)
+    y_rel = distance * math.sin(ang_total)
+    x = x_rel + x_mark
+    y = y_rel + y_mark
+    master_tracking[k] = {
+        'raw_x': [x], 'raw_y': [y], 'raw_type': [ty],
+        'Pattern_start_detected': (ty == 1),
+        'End_of_pattern_detected': (ty == 3),
+        'processed': False,
+        'segmentos': {'movement': [], 'type': [], 'valid': []},
+        'params': []
+    }
+
+def process_single_observation(k, track):
+    clean_mov, clean_type, clean_valid, p_start, p_end = PointCloudSegmenter.process(k, track['raw_x'], track['raw_y'], track['raw_type'], seg_cfg)
+    track['segmentos']['movement'] = clean_mov
+    track['segmentos']['type'] = clean_type
+    track['segmentos']['valid'] = clean_valid
+    if p_start: 
+        track['Pattern_start_detected'] = True
+    if p_end: 
+        track['End_of_pattern_detected'] = True
+    
+    if len(clean_mov) > 1:
+        track['params'] = SegmentParameterizer.process_segments(clean_mov, clean_valid)
+        r_lvl, r_cnt, h_lvl = param_store.package_and_add(track['params'], clean_valid, cfg)
+
+def check_patience_and_reconstruct():
+    global current_patience, all_params
+    if param_store.is_done(): 
+        return
+    
+    current_patience -= 1
+    if current_patience <= 0:
+        print("[PYTHON GESTOR] [ALERTA] Paciencia agotada. Ejecutando Reconstrucción Global...", flush=True)
+        datos_guardados = param_store.get_stored_data()
+        exito, linea, nuevos, winner_ids = GlobalTrajectoryReconstructor.run("Apprentice", datos_guardados, cfg, len(all_params))
+        if exito:
+            param_store.set_done()
+            # AGREGAR ESTA LÍNEA PARA TRANSFERIR LOS IDs GANADORES AL BUFFER GLOBAL
+            param_store.clear(cfg, winner_ids)
+            
+            print(f"[PYTHON GESTOR] Resumen Reconstrucción: {linea}", flush=True)
+            for comp in nuevos:
+                all_params.append(comp)
+        else:
+            print("[PYTHON GESTOR] Reconstrucción fallida o sin datos suficientes.", flush=True)
+        current_patience = max_patience
+
+def procesar_datos_logicos_y_reconstruccion(datos_fisicos):
+    yellow_blobs = datos_fisicos['yellow_blobs']
+    green_blobs = datos_fisicos['green_blobs']
+    obs_ang_offset_global = datos_fisicos['obs_ang_offset_global']
+    x_mark = datos_fisicos['x_mark']
+    y_mark = datos_fisicos['y_mark']
+    
+    updated_anterior_indices = {}
+    matched_new_indices = {}
+    candidatos = []
+    
+    # Actualización de maestros
+    for j, new_data in enumerate(yellow_blobs):
+        ang_total_blob = math.radians(new_data['angle']) + obs_ang_offset_global
+        bx_rel = new_data['distance'] * math.cos(ang_total_blob)
+        by_rel = new_data['distance'] * math.sin(ang_total_blob)
+        bx_global, by_global = bx_rel + x_mark, by_rel + y_mark
         
-        -- Incrementamos el temporizador de camino libre
-        RW_clear_path_timer = RW_clear_path_timer + 1
+        for k, anterior_data in srt_anterior_data.items():
+            if 'angle' in anterior_data and k in master_tracking and master_tracking[k]['raw_x']:
+                mx_global = master_tracking[k]['raw_x'][-1]
+                my_global = master_tracking[k]['raw_y'][-1]
+                err = math.sqrt((bx_global - mx_global)**2 + (by_global - my_global)**2)
+                if err <= distance_treshold:
+                    candidatos.append({'blob_idx': j, 'master_idx': k, 'error': err})
+                    
+    candidatos.sort(key=lambda x: x['error'])
+    for cand in candidatos:
+        j, k = cand['blob_idx'], cand['master_idx']
+        if j not in matched_new_indices and k not in updated_anterior_indices:
+            srt_anterior_data[k].update(yellow_blobs[j])
+            updated_anterior_indices[k] = True
+            matched_new_indices[j] = True
+            
+    # Crear nuevos maestros
+    for j, new_data in enumerate(yellow_blobs):
+        if j not in matched_new_indices:
+            new_k = len(srt_anterior_data) + 1
+            srt_anterior_data[new_k] = new_data.copy()
+            if 'type' not in srt_anterior_data[new_k]: 
+                srt_anterior_data[new_k]['type'] = 2
+            updated_anterior_indices[new_k] = True
+            initialize_master_tracking(new_k, new_data['angle'], new_data['distance'], srt_anterior_data[new_k]['type'], obs_ang_offset_global, x_mark, y_mark)
+
+    # Blobs Verdes (Fin)
+    for green_blob in green_blobs:
+        ang_total_green = math.radians(green_blob['angle']) + obs_ang_offset_global
+        gbx_rel, gby_rel = green_blob['distance'] * math.cos(ang_total_green), green_blob['distance'] * math.sin(ang_total_green)
+        gbx, gby = gbx_rel + x_mark, gby_rel + y_mark
+        for k, md in srt_anterior_data.items():
+            if 'angle' in md and k not in updated_anterior_indices and k in master_tracking and master_tracking[k]['raw_x']:
+                mx, my = master_tracking[k]['raw_x'][-1], master_tracking[k]['raw_y'][-1]
+                if math.sqrt((gbx - mx)**2 + (gby - my)**2) <= distance_treshold:
+                    srt_anterior_data[k]['type'] = 3
+                    updated_anterior_indices[k] = True
+                    master_tracking[k]['End_of_pattern_detected'] = True
+                    break
+                    
+    # Grabación y Pérdidas
+    for k in list(srt_anterior_data.keys()):
+        track = master_tracking.get(k)
+        is_lost = ('angle' in srt_anterior_data[k] and k not in updated_anterior_indices)
+        is_finished = track and track['End_of_pattern_detected']
         
-        -- Si hemos avanzado un buen rato sin obstáculos, reseteamos la memoria de atascos
-        if RW_clear_path_timer > 30 and datos_prox.max_val.valor < 0.3 then
-            RW_stuck_counter = 0
-        end
+        if (is_lost or is_finished) and track and not track['processed']:
+            process_single_observation(k, track)
+            track['processed'] = True
+            srt_anterior_data[k] = {}
+            
+    for k in updated_anterior_indices:
+        md = srt_anterior_data[k]
+        track = master_tracking[k]
+        if md and track and not track['processed']:
+            ang_tot = math.radians(md['angle']) + obs_ang_offset_global
+            x_new = md['distance'] * math.cos(ang_tot) + x_mark
+            y_new = md['distance'] * math.sin(ang_tot) + y_mark
+            track['raw_x'].append(x_new)
+            track['raw_y'].append(y_new)
+            track['raw_type'].append(md['type'])
+            if md['type'] == 1: 
+                track['Pattern_start_detected'] = True
+            if md['type'] == 3: 
+                track['End_of_pattern_detected'] = True
 
-        local max_val = datos_prox.max_val.valor
-        local max_ang = datos_prox.max_val.angulo
+--=============================================
+--   MEJORAS :  -- Modulos de reconstrucción y guardado de fragmentos optimizado.
+                -- Nuevo experimentopresentado.
+--=============================================
+-------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
+--                                                  VARIABLES GLOBALES                                                             --
+-------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
 
-        -- DETONANTE: Obstáculo peligroso (> 0.8) y QUE NO SEA EL SENSOR TRASERO
-        -- Se usa math.abs(max_ang) ~= 180 para ignorar colisiones por detrás mientras avanzamos.
-        if max_val > 0.4 and math.abs(max_ang) ~= 180 then
-            
-            -- 1. Detener motores de inmediato
-            robot.wheels.set_velocity(0, 0)
-            
-            -- 2. Reseteamos el contador de "camino libre" y aumentamos la "frustración"
-            RW_clear_path_timer = 0
-            RW_stuck_counter = RW_stuck_counter + 1
-            
-            -- 3. TOMA DE DECISIÓN DEL ÁNGULO DE EVASIÓN
-            if RW_stuck_counter >= 3 then
-                -- CASO A: Atascado en un callejón o esquina compleja (Anti-Stuck)
-                -- Fuerza un giro de entre 160° y 180° para salir por donde vino
-                Rw_target_angle = robot.random.uniform_int(160, 180)
-                
-                -- Giramos hacia el lado más despejado por eficiencia
-                if max_ang < 0 then 
-                    Rw_target_angle = -Rw_target_angle 
-                end
-                
-                RW_stuck_counter = 0 -- Reseteamos la frustración porque ya tomamos acción extrema
-                
-            else
-                -- CASO B: Evasión Inteligente basada en el sensor específico
-                if max_ang == 0 then
-                    -- Frente exacto: 50% probabilidad izq/der. Giro amplio.
-                    if robot.random.uniform_int(0, 1) == 0 then
-                        Rw_target_angle = robot.random.uniform_int(90, 160)
-                    else
-                        Rw_target_angle = robot.random.uniform_int(-160, -90)
-                    end
-                    
-                elseif max_ang == 45 then
-                    -- Obstáculo Frente-Izquierda: Girar a la derecha
-                    Rw_target_angle = robot.random.uniform_int(-150, -90)
-                    
-                elseif max_ang == -45 then
-                    -- Obstáculo Frente-Derecha: Girar a la izquierda
-                    Rw_target_angle = robot.random.uniform_int(90, 150)
-                    
-                elseif max_ang == 90 then
-                    -- Roce Lateral Izquierdo: Giro medio/suave a la derecha para separarse
-                    Rw_target_angle = robot.random.uniform_int(-90, -45)
-                    
-                elseif max_ang == -90 then
-                    -- Roce Lateral Derecho: Giro medio/suave a la izquierda para separarse
-                    Rw_target_angle = robot.random.uniform_int(45, 90)
-                    
-                else
-                    -- Fallback de seguridad (Si algo altera los ángulos)
-                    Rw_target_angle = robot.random.uniform_int(90, 180)
-                end
-            end
-            
-            -- Cambiamos al estado de giro
-            RW_b1 = 1
-            
-        else
-            -- Si no hay peligro al frente o a los lados, avanzar
-            robot.wheels.set_velocity(30, 30)
-        end
+--================== ACTIVAR PARA QUPA ==================
+-----------------------------
+--NOTAS: 
+    -- Formula para calcular la dstancia de detección de observación: d = tan(angulo_de_apertura)*altura_de_la_camara -> Qupa: d = tan(70.71°) * 0.245 = 0.7 m.
+        -- El angulo se modifica en el archivo .argos:   <qupa id="Qupa6" omnidirectional_camera_aperture="70.71">
 
-    elseif RW_b1 == 1 then
-        -- ==========================================================
-        -- ESTADO 1: GIRANDO PARA EVADIR
-        -- ==========================================================
-        move(0, Rw_target_angle, 30, 80)
+-----------------------------
+--Parámetro de simulación externos
 
-        -- Revisamos las banderas globales de la función move() para saber si ya terminó
-        if c1 == 2 then
-            RW_b1 = 0
-            Rw_target_angle = 0
-            c1 = 0
-            c2 = 0
-        end
-    end
+-- 187014    semilla 1er exp. FOOT
+math.randomseed(os.time())
+
+ticks_per_second                    = 4                         -- Número de ticks que representa un segundo en la simulación (ajusta según la configuración de .argos)
+max_time                            = 5000 * ticks_per_second   -- Duración máxima de la simulación en ticks
+Distribucion_sensores_de_proximidad = {0,-45,45,-90, 90,180}    -- Ángulos de los sensores de proximidad a considerar para la detección de obstáculos (en grados) --> {} o "uniformes"
+--Distribucion_sensores_de_proximidad = "uniform"               -- Ángulos de los sensores de proximidad a considerar para la detección de obstáculos (en grados) --> {} o "uniformes"
+Num_cantidad_leds                   = 2
+FOOTBOT_INTERWHEEL_DISTANCE         = 14                        -- Distancia entre ruedas del Qupa (en metros)
+-- Importamos 
+math_helper = require("Functions.math_helper")
+
+------------------------------
+--Parámetro de simulación internos
+
+factor_vel  = 1                   -- Factor para ajustar la velocidad del master al ejecutar el patrón
+speed_dem   = 10*factor_vel       -- 
+speed_dem_g = (speed_dem/2)       -- 
+
+d_speed     = 30                  -- velocidad en linea recta del apprentice
+g_speed     = 80                  -- Velocidad de giro del apprentice
+
+------------------------------
+-- Modelos
+
+-- Métricas del modelo de absevación
+distance_treshold       = 20         -- Sensibilidad del apprentice a caambios en los puntos obtenidos del maestro durante la etapa de observación.
+
+-- Métricas del modelo de paciencia
+MAX_PATIENCE            = 160 * ticks_per_second       -- Tiempo máximo de espera sin recibir datos útiles en segundos
+BASE_RESTORE            = 20  * ticks_per_second       -- Paciencia base a restaurar con datos refinados/actualizados en segundos
+
+-- Métricas del modelo de ActiveLearning
+back_threshold          = 10      -- Distancia que retrocede el apprentice para evitar colisión. cm.
+front_threshold         = 30      -- Limite de distancia minima entre un objeto detectado y el apprentice para entrar a evadirlo
+max_tracking_distance   = 10      -- Máxima distancia a la que se puede alejar el centroide antes de que el apprentce se acerque para no perder de vista. cm
+porcentaje              = 0.75    -- 1 < porcentaje < 0.33 , indica que tanto el apprentice busca alejarse del maestro cuando este cruza el max_tracking_distance.
+
+------------------------------
+-- Módulos
+
+-- Métricas del módulo de ruido en camara de blobs del aprendiz: noise_manager.lua
+noise_cfg = {
+    ENABLE_NOISE            = true ,    -- Si es false, el robot ve perfecto (Ground Truth)
+    USE_DISTANCE_DEPENDENT  = true  ,    -- El ruido aumenta si el objeto está lejos
+    USE_OUTLIERS            = false ,    -- Activar lecturas "fantasma" o fallos graves
+    USE_BIAS                = true  ,    -- Error sistemático (ej. sensor mal calibrado +2cm siempre)
+    -- 
+    NOISE_BASE_RADIUS       = 0.000 ,    -- Ruido constante base (ej. 1 cm de error mínimo)
+    NOISE_SIGMAS            = 2.0   ,    -- 2 sigmas = 95% de probabilidad de caer dentro del 'Radio Actual'
+    NOISE_FACTOR            = 0.1   ,    -- Crece un 10% respecto a la distancia (ej. a 100cm, suma 5cm extra al radio si es 0.05)
+    OUTLIER_PROB            = 0.01  ,    -- % de probabilidad de fallo catastrófico
+    BIAS_OFFSET             = 0.0   ,    -- Cm extra que agrega el sensor por defecto (si USE_BIAS es true)
+}
+
+-- Métricas del módulo: Point_Cloud_Segmenter.lua y Segmenter_Parameterizer.lua 
+seg_cfg = {
+    distance_treshold       = 15,                  -- Menor que la longitud de lado más pequeña del/los comportamiento a aprender (cm)
+    limite_maximo_ventana   = (30)/factor_vel,     --
+    tamano_subsampling      = 15,                  -- 
+    use_subsampling         = false,               --
+}
+
+-- Métricas del módulo de reconstrucción de comportamientos de movimiento: Global_Trajectory_Reconstructor.lua y Parameter_Storage.lua
+-- Esta tabla centraliza los hiperparámetros de tolerancia geométrica, pesos de evaluación, filtrado de ruido y protecciones de rendimiento en tiempo real para el sistema de reconstrucción.
+CONFIG = {
+    -- ------------------------------------------------------------------------
+    -- 1. TOLERANCIAS GEOMÉTRICAS Y SOLAPES
+    
+    -- Margen de error permitido en distancia (en centímetros).
+    -- Implicación: Define cuán estrictos somos para considerar que dos distancias detectadas corresponden al mismo segmento. 
+    -- Si es muy bajo, el ruido real romperá los datos verdaderos; si es muy alto, unirá cosas dispares.
+    TOL_DIST = 15,
+    
+    -- Margen de error permitido en ángulos (en grados).
+    -- Implicación: Tolerancia angular aceptada para determinar si dos rectas, tramos son colineales.
+    TOL_ANG = 15,
+}
+
+------------------------------
+-- Parámetros de patrónes predefinidos a ejecutar por los master
+distance_factor = 1  -- Factor de escala para ajustar el tamaño de las figuras predefinidas (ajusta según tu espacio de simulación)
+
+if robot.id == "Qupa4" then
+
+elseif robot.id == "Qupa0" then
+    figura = "triangulo_irregular_1" -- "triangulo_regular" -- "octagono" -- "triangulo_irregular_1" --"Pentágono_irregular"  -- "Heptágono"-- "" -- "trayectoria_1" 
+    distance_factor = 1
+elseif robot.id == "Qupa1" then
+    figura = "triangulo_regular" -- "triangulo_regular" -- "octagono" -- "triangulo_irregular_1" --"Pentágono_irregular"  -- "Heptágono"-- "" -- "trayectoria_1" 
+    distance_factor = 1
+elseif robot.id == "Qupa2" or robot.id == "Qupa3" or robot.id == "Qupa5" then
+    figura = "Pentágono_irregular" -- "triangulo_regular" -- "octagono" -- "triangulo_irregular_1" --"Pentágono_irregular"  -- "Heptágono"-- "" -- "trayectoria_1" 
+    distance_factor = 1
+elseif robot.id == "Qupa6" or robot.id == "Qupa7" then
+    figura = "octagono" -- "triangulo_regular" -- "octagono" -- "triangulo_irregular_1" --"Pentágono_irregular"  -- "Heptágono"-- "" -- "trayectoria_1" 
+    distance_factor = 1
+end
+
+------------------------------
+-- Banderas de loggeo
+SRP_LOG_MODE        = 0 -- 0: Sin logs, 1: Parámetros obtenidos tras finalizar la observación de un maestro. 2. Paso a paso de la actualización de maestros, 3: Imprime todo.
+UP_LOG_MODE         = 2 -- 0: Sin logs, 1: Delimitador de ciclos de aprendizaje 2: Información sobre la paciencia (Tiempo que el apprentice actualiza para continuar o deter su aprendizaje)
+AL_LOG_MODE         = 0 -- 0: Sin logs, 1: Información sobre el Active Learning, 2: Información detallada del Active Learning, 3: Estados del active learning
+DEBUG_EVASION       = 0 -- 0: Nada, 1: Cambios de estado, 2: Sensores y estados continuos
+
+-------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
+--                                                      MAIN FUNCTIONS                                                             --
+-------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
+
+-------------------------------------------------------------------------------------------------------------------------------------
+-- Funciones para los trackers 
+    -- Estas funciones se mantienen comentadas por defecto. Si se requieren se llaman en arun_sim.py y este las descomenta para que se ejecuten automaticamente.
+-------------------------------------------------------------------------------------------------------------------------------------
+
+-- function Print_tracker_paciencia(current_patience_seg)
+
+--     print("[PACIENCIA](" .. current_patience_seg.. ") segundos.") 
+-- end
+
+-- function Print_tracker_trayectory_data(p1, p2, p3, p4, p5, p6, p7, p8)
+--     -- Retrocompatibilidad: Si el primer parámetro no es "trajectory" ni "Active_learning"
+--     if type(p1) ~= "string" or (p1 ~= "trajectory" and p1 ~= "Active_learning") then
+--         local k, x, y, logging = p1, p2, p3, p4
+--         if type(k) == "number" then
+--             print("Master" .. k .. " & " .. x .. " , " .. y)
+--             if logging then log("Master" .. k .. " & " .. x .. " , " .. y) end
+--         elseif type(k) == "string" then
+--             local rx = robot.positioning.position.x
+--             local ry = robot.positioning.position.y
+--             if k == "Qupa4" then
+--                 print("Apprentice & " .. rx .. " , " .. ry)
+--             elseif k == "App" then
+--                 print("Patrón".. (master_indice or "") .." & " .. rx .. " , " .. ry)
+--             else
+--                 print(k .. " & " .. rx .. " , " .. ry)
+--             end
+--         end
+--         return
+--     end
+
+--     -- [NUEVO FORMATO] Usamos PUNTO Y COMA (;) para evitar choques con decimales
+--     if p1 == "trajectory" then
+--         local k, x, y, logging = p2, p3, p4, p5
+--         if type(k) == "number" then
+--             print("[trajectory];Master" .. k .. ";" .. x .. ";" .. y)
+--             logging = false
+--             if logging then log("[trajectory];Master" .. k .. ";" .. x .. ";" .. y) end
+--         elseif type(k) == "string" then
+--             local rx = robot.positioning.position.x
+--             local ry = robot.positioning.position.y
+--             if k == "Qupa4" then
+--                 print("[trajectory];Apprentice;" .. rx .. ";" .. ry)
+--             elseif k == "App" then
+--                 print("[trajectory];Patrón".. (master_indice or "") ..";" .. rx .. ";" .. ry)
+--             else
+--                 print("[trajectory];" .. k .. ";" .. rx .. ";" .. ry)
+--             end
+--         end
+        
+--     -- [NUEVO FORMATO] Datos enriquecidos de Active Learning
+--     elseif p1 == "Active_learning" then
+--         local al_mode, name, x, y, extra1, extra2, extra3 = p2, p3, p4, p5, p6, p7, p8
+--         -- El aprendiz usa siempre su posición global real para anclar los vectores
+--         if type(name) == "string" and name == "Qupa4" then
+--             x = robot.positioning.position.x
+--             y = robot.positioning.position.y
+--             name = "Apprentice"
+--         end
+--         local out = "[active_learning];" .. al_mode .. ";" .. name .. ";" .. x .. ";" .. y
+--         if extra1 ~= nil then out = out .. ";" .. extra1 end
+--         if extra2 ~= nil then out = out .. ";" .. extra2 end
+--         if extra3 ~= nil then out = out .. ";" .. extra3 end
+--         print(out)
+--     end
+-- end
+
+-- function Print_tracker_AL_PID(target, actual, control_vars)
+--     local str = string.format("[PID];%.4f;%.4f", target, actual)
+--     -- Recorremos la tabla para agregar cada variable con su nombre (ej: ;out_speed_d=30.0)
+--     for name, value in pairs(control_vars) do
+--         str = str .. string.format(";%s=%.4f", name, value)
+--     end
+--     print(str)
+-- end
+
+-- function Print_tracker_calidad_imitacion_data(linea_resumen, is_master)
+
+--     if is_master == 0 then
+
+--         print(linea_resumen)
+--     else
+
+--         -- Función auxiliar para separ   ar la parte entera y los dos decimales de un número
+--         local function split_num(val)
+--             local sign = val < 0 and "-" or ""
+--             local abs_val = math.abs(val)
+--             local int_part = math.floor(abs_val)
+--             local dec_part = math.floor((abs_val - int_part) * 100 + 0.5)
+            
+--             -- Ajuste por si el redondeo sube el decimal a 100
+--             if dec_part >= 100 then
+--                 int_part = int_part + 1
+--                 dec_part = dec_part - 100
+--             end
+            
+--             -- Retorna dos valores: la parte entera (con su signo) y la parte decimal a 2 dígitos
+--             return string.format("%s%d", sign, int_part), string.format("%02d", dec_part)
+--         end
+        
+--         -- Obtenemos el patrón correspondiente a la variable global 'figura' actual
+--         local data = original_params()
+        
+--         -- Verificamos que se haya encontrado un patrón válido
+--         if not data or not data.params then 
+--             log(robot.id .. " & Error: No se encontró un patrón asignado.")
+--             return 
+--         end
+        
+--         local nombre_patron = data.name or "Desconocido"
+--         -- Iniciamos la cadena con el formato solicitado
+--         local resultado = robot.id .. " & Original&" .. nombre_patron
+        
+--         local params = data.params
+--         for j = 1, #params do
+--             -- En original_params, la tabla es {distancia, angulo}
+--             local dist = params[j][1]
+--             local ang = params[j][2]
+            
+--             -- Separamos enteros y decimales de la distancia y el ángulo
+--             local dist_i, dist_d = split_num(dist)
+--             local ang_i, ang_d = split_num(ang)
+            
+--             -- Concatenamos el paso con el formato (angI,angD,distI,distD)
+--             resultado = resultado .. string.format("(%s,%s,%s,%s)", ang_i, ang_d, dist_i, dist_d)
+            
+--             -- Agregamos la coma separadora entre pasos (excepto en el último)
+--             if j < #params then
+--                 resultado = resultado .. ","
+--             end
+--         end
+--         -- Imprimimos el resultado final en la terminal de ARGoS
+--         log(resultado)
+--     end
+-- end
+
+-- function Print_tracker_varianza(k, var)
+--     print( "Maestro"..k.." & " .. var)             -- Datos para el anális de varianza en los datos obtenidos por el observador. Script -> sun_sim.py
+-- end
+
+-- function evaluator_otsu(separacion, avance)
+--     print( "Otsu & " .. separacion.." , "..avance) -- Datos para el anális del método de otsu a distintos valores de velocidad del demostrador: speed_dem  -> Script: master_evluator.py
+-- end
+
+-- function evaluator_ruido (raw_angle, raw_dist, noisy_angle, noisy_dist)
+--     print("[EVALUATOR_RUIDO]Blob : angulo = " .. raw_angle .. ", distancia = " .. raw_dist)
+--     --log("\n[EVALUATOR]Blob perfecto: angulo = " .. raw_angle .. ", distancia = " .. raw_dist)
+--     print("[EVALUATOR_RUIDO]Blob ruidoso : angulo = " .. noisy_angle .. ", distancia = " .. noisy_dist)
+-- end
+
+-------------------------------------------------------------------------------------------------------------------------------------
+-- Función que se ejecuta al inicio de la simulación
+-------------------------------------------------------------------------------------------------------------------------------------
+
+function init()
+    
+    robot.colored_blob_omnidirectional_camera.enable()
+
+    determinar_rol()
+    
+    if Print_tracker_calidad_imitacion_data then Print_tracker_calidad_imitacion_data(robot.id, is_master) end
+
+    if is_master == 0 then
+        local current_x     = robot.positioning.position.x
+        local current_y     = robot.positioning.position.y
+        local orientation   = robot.positioning.orientation
+        local ang           = math_helper.vec2_angle(orientation)
+
+        if Print_tracker_trayectory_data then print("[trajectory];" .. "[offset];" .. current_x .. ";" .. current_y .. ";" .. ang) end
+
+        if Print_tracker_paciencia then 
+            print("[PACIENCIA]("..(MAX_PATIENCE/ticks_per_second)..")&" .. ticks_per_second)
+        end
+
+        if Print_tracker_varianza then
+            if seg_cfg.use_subsampling then
+                print("[varianza](tamano_subsampling="..seg_cfg.tamano_subsampling)
+            end
+        end
+    end
+end
+-------------------------------------------------------------------------------------------------------------------------------------
+-- Función principal que se ejecuta en cada tick
+-------------------------------------------------------------------------------------------------------------------------------------
+
+timer = 1
+function step()
+
+    if robot.id == "Qupa4" and 
+        ( evaluator_ruido or Print_tracker_trayectory_data or Print_tracker_paciencia or Print_tracker_AL_PID) then 
+            print("Timer="..timer) 
+    end
+
+    if is_master == 1 then
+        master() -- Ejecutar si es master
+    else
+        apprentice()
+    end
+
+    if robot.id == "Qupa4" and timer == max_time then
+        print("End_simulation")
+    end
+
+    timer = timer + 1
+end
+
+-------------------------------------------------------------------------------------------------------------------------------------
+-- Funciones para cada rol
+-------------------------------------------------------------------------------------------------------------------------------------
+
+all_params              = {}    -- Almacenará todos los patrones descubiertos
+parametros_elegidos     = {}    -- El patrón específico seleccionado para ejecutar
+
+d1                      = 2
+master_avg_dist         = 0
+master_indice           = 0
+function master()
+    --d1 = 2 -- ESTAMOS PROVISIONALMENTE FORZANDO AL DEMOSTRADOR A EJECUTAR EL COMPORTAMIENTO DIRECTAMENTE
+
+    if d1 == 0 then
+        detectar_zona_demostracion()
+        --log("detectar_zona_demostracion")
+
+    elseif d1 == 1 then   
+        espera_antes_de_ejecutar_patron()
+        --log("espera_antes_de_ejecutar_patron")
+
+    elseif d1 == 2 then
+        -- =========================================================
+        -- Selección aleatoria del comportamiento a demostrar
+        -- =========================================================
+
+        -- Verificamos que existan comportamientos guardados en la tabla
+        if #all_params > 0 then
+
+            if master_indice == #all_params then
+                d1 = 4
+                return
+            end
+            
+            master_indice = master_indice + 1
+            parametros_elegidos = all_params[master_indice]
+            
+        else
+            if robot.id == "Qupa4" then
+                log("No se detectaron comportamientos en la etapa de observación, "..robot.id)
+                d1 = 4
+                return
+            end
+            -- Respaldo de seguridad por si la tabla aún está vacía
+            parametros_elegidos = original_params()
+            parametros_elegidos = parametros_elegidos.params
+        end
+
+        d1 = 3
+
+    elseif d1 == 3 then
+        Ejecutar_comportamiento(parametros_elegidos)
+
+        if PI_end then
+            resetDEM()
+            d1 = 2
+        end
+    elseif d1 == 4 then
+        robot.wheels.set_velocity(0, 0)
+        setleds("black")
+        print("End_simulation")
+    end
+end
+
+c4      = 0
+AP_1    = 1
+function apprentice()
+
+    -- === ESTADO DE APRENDIZAJE ===
+    if c4 == 0 then 
+        store_relative_positions()
+        
+    -- === ESTADOS DE EXPLORACIÓN (RANDOM WALK) ===
+    elseif c4 == 1 then
+
+        AP_1 = 1
+        rw_timer = rw_timer + 1
+        if Print_tracker_trayectory_data then Print_tracker_trayectory_data("trajectory", "Qupa4", 0, 0) end
+
+        RandomWalking()
+
+        if rw_timer >= TIEMPO_RW_TICKS then
+            robot.wheels.set_velocity(0, 0)
+            r_move()                 
+            r_Temporizador_1()
+            r_move()
+            rw_timer = 0             
+            c4 = 2                   
+        end
+
+    elseif c4 == 2 then
+        -- Limpieza selectiva de memoria: Manda los IDs ganadores para que el global buffer descarte los inútiles
+        local current_cfg = { CONFIG = CONFIG, LOG_MODE = SRP_LOG_MODE }
+        ParameterStorage.clear(current_cfg, current_winning_ids)
+        current_winning_ids = {} -- Vaciamos tras usar
+
+        soft_reset_observer()
+
+        local current_x = robot.positioning.position.x
+        local current_y = robot.positioning.position.y        
+        local orientati = robot.positioning.orientation
+        local ang       = (math_helper.vec2_angle(orientati)/ 180) * math.pi
+
+        if Print_tracker_trayectory_data then print("[trajectory];" .. "[offset];" .. current_x .. ";" .. current_y .. ";" .. ang) end
+
+        c4 = 0 -- Regresa a observar
+
+    -- === ESTADOS DE EJECUCUCION DE COMPORTAMIENTOS APRENDIDOS ===
+    elseif c4 == 3 then
+        local NAC = navegar_a_coordenadas(0,0,0.10)
+        if NAC then
+            c4 = 4
+        end 
+        
+    elseif c4 == 4 then
+        resetOBS()
+        is_master = 1
+    end
+end
+
+-------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
+--                                          Funciones de comportamiento de los Qupa                                               --
+-------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
+
+-------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
+-- MODULO DEL MAESTRO
+-------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
+
+function detectar_zona_demostracion()
+    RandomWalking()
+    setleds("black")
+    local G = ground{
+        range = {
+            {0.21, 0.3 },   -- gris 2
+            }                
+        , print_all_data        = false
+        , print_detected_ranges = false
+        -- base_ground_active = false
+    }
+
+    if #G.Gr > 0 then
+        d1 = 1
+        robot.wheels.set_velocity(0, 0)
+        r_Temporizador_1()
+        r_move()
+
+        -- if robot.id == "Qupa3" then 
+        --     setleds("red")
+        --     log("Zona de demostración detectada, "..robot.id)
+        -- end
+        --setleds("red")
+    end
+end
+
+EAEP_c1 = 0
+function espera_antes_de_ejecutar_patron()
+    if EAEP_c1 == 0 then
+        local blobs = robot.colored_blob_omnidirectional_camera
+        local total_distance = 0
+        local count = 0  
+        local vel_g = 10
+        master_avg_dist = 0
+
+        Temporizador_1(15)
+
+        --setleds("yellow")
+        if temp == false then
+            EAEP_c1 = 1
+            --setleds("yellow")
+        end
+        
+    else
+        d1 = 2
+        r_move()
+        r_Temporizador_1()
+        -- log("Inicio de demostración por " .. robot.id)
+    end
+end
+
+-------------------------------------------------------------------------------------------------------------------------------------
+-- función para realizar el comportamiento de movimiento (trayectoria)
+-------------------------------------------------------------------------------------------------------------------------------------
+SMART_MASTERS = true -- true: Se detienen si hay obstáculo. false: Son ciegos.
+
+indice          = 1
+PI_end          = false
+PI_counter_seg  = 0
+
+function Ejecutar_comportamiento(params_P)
+    local params = params_P
+    local prox = proximidad()
+    local master_paused = false
+
+    -- =========================================================================
+    -- LÓGICA DE PAUSA INTELIGENTE
+    -- =========================================================================
+    if SMART_MASTERS and robot.id ~= "Qupa4" then
+        -- Si hay un obstáculo cerca en el cono frontal
+        if prox[1] == 1 and ( math.abs(prox[2]) <= 45 ) then 
+            master_paused = true
+            -- setleds("red") -- Opcional: Indicador de pausa por obstáculo
+        end
+    end
+    -- =========================================================================
+
+    if not PI_end then
+        if params and #params >= 1 then
+            if indice <= #params then
+                local valor1, valor2 = params[indice][1], params[indice][2]
+                
+                -- ¡CLAVE! Siempre llamamos a move, inyectando la bandera de pausa al final
+                move(valor1, valor2, speed_dem, speed_dem_g, false, robot.id, master_paused)
+
+                -- Solo avanzamos la lógica del patrón si NO estamos pausados
+                if not master_paused then
+                    if robot.id == "Qupa4" then 
+                        if Print_tracker_trayectory_data then Print_tracker_trayectory_data("App", 0, 0) end
+                    end
+                    setleds("yellow")
+
+                    -- c1 == 2 indica que el segmento terminó con éxito dentro de move()
+                    if c1 == 2 then
+                        PI_counter_seg = PI_counter_seg + 1
+                        if indice == #params then
+                            indice = indice + 1
+                            PI_end = true
+                            r_Temporizador_1()
+                        else
+                            indice = indice + 1
+                            c1 = 0
+                        end
+                    end
+                end
+            end
+        else
+            PI_end = true
+            robot.leds.set_all_colors("black")
+            log( " -------------------------------------------------------------------------" )
+            log("Patrón no detectado :( " .. robot.id)
+            log( " -------------------------------------------------------------------------" )
+        end
+    end
+
+    if PI_end then
+        robot.wheels.set_velocity(0, 0)   -- Detenerse
+        setleds("black")
+    end
+end
+
+-------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
+-- MODULO DEL OBSERVADOR (Con Active Learning Integrado)
+-------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
+
+-- ============================================================================
+-- [SECCIÓN 1] IMPORTACIÓN DE SUBMÓDULOS DEL OBSERVADOR
+-- ============================================================================
+NoiseManager                    = require("Functions.Observer.noise_manager")
+PointCloudSegmenter             = require("Functions.Observer.Point_Cloud_Segmenter")
+SegmentParameterizer            = require("Functions.Observer.Segment_Parameterizer")
+ParameterStorage                = require("Functions.Observer.Parameter_Storage")
+GlobalTrajectoryReconstructor   = require("Functions.Observer.Global_Trajectory_Reconstructor")
+ImitationQuality                = require("Functions.Observer.ImitationQuality") -- NUEVA IMPORTACIÓN
+
+-- ActiveLearning                  = require("Functions.Observer.Active_learning.Centroide_basic")
+-- ActiveLearning                  = require("Functions.Observer.Active_learning.Centroide_threshold")
+-- ActiveLearning                  = require("Functions.Observer.Active_learning.Centroide_PID")
+ActiveLearning                  = require("Functions.Observer.Active_learning.CamposVectoriales")
+-- ActiveLearning                  = require("Functions.Observer.Active_learning.Estatico")
+ENABLE_ACTIVE_LEARNING          = true
+-- AL_SMOOTH_TICKS                 = 4           -- Cantidad de ticks a recordar (tamaño del buffer)
+-- AL_SMOOTH_METHOD                = "median"    -- Puede ser "mean" (media/promedio) o "median" (mediana)
+
+-- ============================================================================
+-- [SECCIÓN 2] VARIABLES GLOBALES DE ESTADO Y MEMORIA
+-- ============================================================================
+
+-- Variables para lógica de exploración y redundancia (N)
+N_MAX_INTENTOS          = 3
+intentos_redundantes    = N_MAX_INTENTOS
+TIEMPO_RW_TICKS         = 60 * ticks_per_second -- 30 segundos de Random Walk
+rw_timer                = 0
+K_UMBRAL_SIMILITUD      = 0.85  -- 85% de similitud de Qi (0.85) para considerarlo un patrón "conocido"
+
+current_patience  = MAX_PATIENCE
+master_tracking   = {} -- Memoria detallada de cada maestro observado
+srt_anterior_data = {} -- Registro temporal para enlazar blobs entre ticks (tracking)
+
+-- Variables globales para el Active Learning (Movimiento del Observador)
+motion_active       = false
+last_motion_marker  = {0, 0}
+srt_ang_mark_ant    = 0
+x_mark, y_mark      = 0, 0
+x_ant_r, y_ant_r    = 0, 0
+current_wait_ticks  = 0
+obs_stop_flag       = false
+MAX_WAIT_TICKS      = 2*ticks_per_second -- Ajusta este valor según la paciencia deseada frente a un obstáculo
+
+al_current_state    = "IDLE"
+
+SP_CRITICAL_THRESHOLD = 0.10 
+function change_al_state(new_state, log_msg, finish_reason)
+    if al_current_state ~= new_state then
+        -- Si salimos de un estado activo, avisamos su fin con el MOTIVO EXACTO
+        if AL_LOG_MODE == 3 and al_current_state ~= "IDLE" then
+            local razon = finish_reason or "Razón desconocida"
+            log(string.format(">>> [FIN] Estado '%s' - Razón: %s \n", al_current_state, razon))
+        end
+        
+        al_current_state = new_state
+        
+        -- Si entramos a un estado activo, mostramos la info
+        if AL_LOG_MODE == 3 and new_state ~= "IDLE" then
+            log(string.format("\n>>> [ALERTA] %s", log_msg))
+        end
+    end
+end
+-- ============================================================================
+-- [SECCIÓN 3] GESTIÓN DE PACIENCIA Y RECONSTRUCCIÓN
+-- ============================================================================
+
+-- Decaimientos diferenciados según la calidad de la información
+DECAY_RATES = {
+    [1] = 0.15, -- 15% de pérdida por cada vez que ESE fragmento hace Nivel 1
+    [2] = 0.10, -- 10% de pérdida por cada vez que ESE fragmento hace Nivel 2
+    [3] = 0.0   -- 0% de pérdida para Nivel 3 (Totalmente nuevo, restaura full)
+}
+
+-- Para almacenar los IDs ganadores de la última reconstrucción exitosa
+current_winning_ids = {}
+
+-- Fíjate que ahora recibe "fragment_history_count"
+function update_patience(restore_level, data_count, fragment_history_count)
+    if restore_level == 0 then return end -- Nivel 0: Sin restauración
+    
+    if restore_level == 3 then
+        -- Nivel 3: Datos totalmente nuevos (Full). Ahora no decae (0%)
+        local decay_factor = 1.0 
+        local restore_amount = math.floor(MAX_PATIENCE * decay_factor)
+        
+        current_patience = math.min(MAX_PATIENCE, current_patience + restore_amount)
+        
+        if UP_LOG_MODE == 2 or UP_LOG_MODE == 3 then 
+            log(string.format("[PACIENCIA] Restaurada (NIVEL 3). Eficacia 100%%. +%.2f seg. Actual: %.2f seg.", 
+                restore_amount/ticks_per_second, current_patience/ticks_per_second))
+        end
+
+    elseif restore_level == 1 or restore_level == 2 then
+        -- ¡CORRECCIÓN! Eliminamos completamente la división por la cantidad de datos.
+        -- Ahora la cantidad a restaurar depende única y exclusivamente de la Eficacia del historial.
+        
+        local decay_factor = math.max(0, 1.0 - (fragment_history_count * DECAY_RATES[restore_level]))
+        
+        -- Base efectiva = Maximo a restaurar para Nivel 1 (ej: 40seg) * Eficacia
+        local base_efectiva = BASE_RESTORE * decay_factor
+        
+        local restore_amount = math.floor(base_efectiva)
+        
+        -- Si es Nivel 2, el máximo a restaurar es el doble (ej: 80seg), manteniendo la proporción
+        if restore_level == 2 then
+            restore_amount = restore_amount * 2
+        end
+        
+        current_patience = math.min(MAX_PATIENCE, current_patience + restore_amount)
+        
+        if UP_LOG_MODE == 2 or UP_LOG_MODE == 3 then 
+            log(string.format("[PACIENCIA] Rest. Parcial (NIVEL %d). Eficacia %.0f%%. +%.2f seg. Actual: %.2f seg.", 
+                restore_level, decay_factor * 100, restore_amount/ticks_per_second, current_patience/ticks_per_second)) 
+        end
+    end
+end
+
+function check_patience_and_reconstruct()
+    if ParameterStorage.is_done() then return end
+
+    -- El contador se reduce constantemente con el paso del tiempo
+    current_patience = current_patience - 1
+    if Print_tracker_paciencia then Print_tracker_paciencia(current_patience/ticks_per_second) end
+
+    if current_patience <= 0 then
+        
+        local datos_guardados = ParameterStorage.get_stored_data()
+        local current_cfg = { CONFIG = CONFIG, LOG_MODE = SRP_LOG_MODE }   
+        
+        local exito, linea_resumen, nuevos_comportamientos, winner_ids = GlobalTrajectoryReconstructor.run(robot.id, datos_guardados, current_cfg, #all_params)
+        
+        local hay_comportamiento_nuevo = false
+
+        if exito then
+            ParameterStorage.set_done()
+            if winner_ids then current_winning_ids = winner_ids else current_winning_ids = {} end
+
+            if Print_tracker_calidad_imitacion_data then Print_tracker_calidad_imitacion_data(linea_resumen, is_master) end
+            
+            -- LÓGICA DE SIMILITUD Y REDUNDANCIA
+            if #all_params == 0 then
+                hay_comportamiento_nuevo = true
+                for _, comportamiento in ipairs(nuevos_comportamientos) do
+                    table.insert(all_params, comportamiento)
+                end
+            else
+                for _, nuevo_comportamiento in ipairs(nuevos_comportamientos) do
+                    local es_conocido = false
+                    for _, comportamiento_conocido in ipairs(all_params) do
+                        local qi = ImitationQuality.evaluate(comportamiento_conocido, nuevo_comportamiento)
+                        if qi >= K_UMBRAL_SIMILITUD then
+                            es_conocido = true
+                            if UP_LOG_MODE == 2 then log(string.format(" -> Comportamiento redundante detectado. Similitud Qi = %.2f%%", qi*100)) end
+                            
+                            -- PROMEDIAR PARÁMETROS DEL COMPORTAMIENTO
+                            local min_len = math.min(#comportamiento_conocido, #nuevo_comportamiento)
+                            for i = 1, min_len do
+                                comportamiento_conocido[i][1] = (comportamiento_conocido[i][1] + nuevo_comportamiento[i][1]) / 2.0
+                                comportamiento_conocido[i][2] = (comportamiento_conocido[i][2] + nuevo_comportamiento[i][2]) / 2.0
+                            end
+                            
+                            if #nuevo_comportamiento > #comportamiento_conocido then
+                                for i = min_len + 1, #nuevo_comportamiento do
+                                    table.insert(comportamiento_conocido, {nuevo_comportamiento[i][1], nuevo_comportamiento[i][2]})
+                                end
+                            end
+                            break
+                        end
+                    end
+                    
+                    if not es_conocido then
+                        hay_comportamiento_nuevo = true
+                        table.insert(all_params, nuevo_comportamiento)
+                        if UP_LOG_MODE == 2 then log(" >>> COMPORTAMIENTO NUEVO AÑADIDO AL DICCIONARIO <<<") end
+                    end
+                end
+            end
+        else
+            current_winning_ids = {}
+        end
+
+        -- LÓGICA DE REDUCCIÓN DE INTENTOS Y FIN DE CICLO
+        if hay_comportamiento_nuevo then
+            intentos_redundantes = N_MAX_INTENTOS
+            if UP_LOG_MODE >= 1 or SRP_LOG_MODE >= 1 then
+                log("\n===========================================================")
+                log(" [FIN CICLO DE APRENDIZAJE] NUEVO COMPORTAMIENTO GUARDADO")
+                log(" Iniciando Random Walk para explorar nuevas áreas.")
+                log("===========================================================\n\n\n")
+            end
+            c4 = 1 
+        else
+            intentos_redundantes = intentos_redundantes - 1
+            if intentos_redundantes > 0 then
+                if UP_LOG_MODE >= 1 or SRP_LOG_MODE >= 1 then 
+                    log("\n===========================================================")
+                    log(" [FIN CICLO DE APRENDIZAJE] REDUNDANCIA O FALLO")
+                    if exito then
+                        log(" -> Todo era redundante (Ya conocido). Intentos restantes N = " .. intentos_redundantes)
+                    else
+                        log(" -> Reconstrucción fallida (Pura basura). Intentos restantes N = " .. intentos_redundantes)
+                    end
+                    log(" Iniciando Random Walk para buscar mejor perspectiva.")
+                    log("===========================================================\n\n\n")
+                end
+                c4 = 1 
+            else
+                if UP_LOG_MODE >= 1 or SRP_LOG_MODE >= 1 then 
+                    log("\n\n\n===========================================================")
+                    log(" [FIN FASE DE APRENDIZAJE] INTENTOS AGOTADOS (N=0)")
+                    log("===========================================================")
+                end
+                
+                log("\n===========================================================")
+                log(" RESUMEN GLOBAL: COMPORTAMIENTOS APRENDIDOS (DICCIONARIO)  ")
+                log("===========================================================")
+                for idx, comportamiento in ipairs(all_params) do
+                    log(string.format("\n--> Comportamiento [%d]:", idx))
+                    if type(comportamiento) == "table" then
+                        local params_str = {}
+                        for _, p in ipairs(comportamiento) do
+                            table.insert(params_str, string.format("{D:%.2f, A:%.2f}", p[1], p[2]))
+                        end
+                        log("    Parámetros: " .. table.concat(params_str, ", "))
+                    else
+                        log("    Parámetros: [Formato desconocido]")
+                    end
+                end
+                log("===========================================================\n")
+
+                intentos_redundantes = N_MAX_INTENTOS 
+                c4 = 3
+            end
+        end
+    end
+end
+
+-- ============================================================================
+-- [SECCIÓN 4] FUNCIONES AUXILIARES DEL OBSERVADOR (TRACKING CRUDO)
+-- ============================================================================
+
+function initialize_master_tracking(k, angle_deg, distance, ty)
+    local angle_rad = angle_deg * (math.pi / 180) -- Blob viene en grados, se pasa a rad
+    
+    -- COMPENSACIÓN: offset global del observador (Ya están en Radianes)
+    local current_move_angle = motion_active and move_angle or 0
+    local obs_ang_offset = srt_ang_mark_ant + current_move_angle 
+    
+    local ang_total = angle_rad + obs_ang_offset
+    local x_rel, y_rel = math_helper.polarACartesianoPAR(distance, ang_total)
+    
+    local x = x_rel + x_mark
+    local y = y_rel + y_mark 
+
+    master_tracking[k] = {
+        raw_x = {x}, raw_y = {y}, raw_type = {ty},
+        Pattern_start_detected = (ty == 1), 
+        End_of_pattern_detected = (ty == 3),
+        processed = false, 
+        segmentos = { movement = {}, type = {}, valid = {} },
+        params = {},
+    }
+end
+
+function process_master_segmentation(k, track, x_original, y_original, ty)
+    table.insert(track.raw_x, x_original)
+    table.insert(track.raw_y, y_original)
+    table.insert(track.raw_type, ty)
+
+    if ty == 1 then track.Pattern_start_detected = true end
+    if ty == 3 then track.End_of_pattern_detected = true end
+end
+
+-- ============================================================================
+-- [SECCIÓN 5] PIPELINE DE PROCESAMIENTO (OBSERVACIÓN INDIVIDUAL)
+-- ============================================================================
+
+function process_single_observation(k, track)
+    if SRP_LOG_MODE == 1 or  SRP_LOG_MODE == 3 then
+        log(" ........................................................ ")
+        log(" PROCESANDO OBSERVACIÓN DEL MAESTRO "..k.." (Datos totales: "..#track.raw_x..")")
+        log(" ........................................................ ")
+    end
+
+    local clean_mov, clean_type, clean_valid, p_start, p_end = PointCloudSegmenter.process(k, track.raw_x, track.raw_y, track.raw_type, seg_cfg)
+
+    track.segmentos.movement = clean_mov
+    track.segmentos.type     = clean_type
+    track.segmentos.valid    = clean_valid
+    
+    if p_start then track.Pattern_start_detected  = true end
+    if p_end   then track.End_of_pattern_detected = true end
+
+    if track.segmentos.movement and #track.segmentos.movement > 1 then 
+        track.params = SegmentParameterizer.process_segments(track.segmentos.movement, track.segmentos.valid)
+        
+        local current_cfg = { CONFIG = CONFIG }
+        
+        -- ¡ATENCIÓN! Capturamos el tercer valor: history_decay_level
+        local r_level, r_count, history_decay_level = ParameterStorage.package_and_add(track.params, track.segmentos.valid, current_cfg)
+        
+        -- Y lo enviamos a update_patience para que lo evalúe de forma aislada
+        if r_level and r_level > 0 then update_patience(r_level, r_count, history_decay_level) end
+    else
+        if SRP_LOG_MODE == 1 or  SRP_LOG_MODE == 3 then log("No hay segmentos suficientes para procesar tras la limpieza.") end
+    end
+end
+-- ============================================================================
+-- [SECCIÓN 6] BUCLE PRINCIPAL DEL OBSERVADOR (TICK A TICK)
+-- ============================================================================
+
+-- Función para normalizar ángulos entre -PI y PI y evitar que 
+-- srt_ang_mark_ant crezca infinitamente tras muchas correcciones
+function normalize_angle_rad(ang)
+    while ang > math.pi do ang = ang - 2 * math.pi end
+    while ang <= -math.pi do ang = ang + 2 * math.pi end
+    return ang
+end
+
+srt_c1 = 0
+function store_relative_positions()
+
+    if AP_1 == 1 then
+        if UP_LOG_MODE >= 1 or SRP_LOG_MODE >= 1 then 
+            log("\n\n\n===========================================================")
+            log(" [INICIO CICLO DE APRENDIZAJE] ")
+            log("===========================================================")  
+        end
+        AP_1 = 0
+    end
+
+    if Print_tracker_trayectory_data then Print_tracker_trayectory_data("trajectory", "Qupa4", 0, 0) end
+    check_patience_and_reconstruct()
+
+    local proximity = proximidad()
+    --log("Proximidad: " .. string.format("%.2f cm, %2f°", proximity[1], proximity[2]).."\n")
+
+    if proximity[1] < 1 then 
+        srt_c1 = 0 
+    else
+        if srt_c1 == 0 then
+            log(" CHOQUE!!!!!!! ")
+            srt_c1 = srt_c1 + 1
+        end
+    end
+
+    Temporizador_1(20) 
+    if temp == false then robot.leds.set_all_colors("black") end
+    
+    -- =========================================================================
+    -- FASE 0: EJECUCIÓN DE ODOMETRÍA, OBSTÁCULOS Y SUPERVIVENCIA (SP)
+    -- =========================================================================
+
+    -- Distribucion_sensores_de_proximidad = {0,-45,45,-90, 90,180}    -- Ángulos de los sensores de proximidad a considerar para la detección de obstáculos (en grados) --> {} o "uniformes"
+
+    if motion_active then
+        local prox_data = proximidad() 
+        obs_stop_flag = false
+
+        local is_object_critical = (prox_data[1] > 0.9)
+        local evadiendo_hacia_atras = (last_motion_marker[1] < 0)
+
+        if is_object_critical then
+            if evadiendo_hacia_atras then
+                if math.abs(prox_data[2]) >= 135 then obs_stop_flag = true end
+            else
+                if math.abs(prox_data[2]) <= 45 then obs_stop_flag = true end
+            end
+        end
+
+        if obs_stop_flag then
+            current_wait_ticks = current_wait_ticks + 1
+            if current_wait_ticks > MAX_WAIT_TICKS then
+                srt_ang_mark_ant = normalize_angle_rad(move_angle + srt_ang_mark_ant)
+                x_ant_r = x_mark
+                y_ant_r = y_mark
+                r_move() 
+                robot.wheels.set_velocity(0, 0)
+                
+                local escape_dir = evadiendo_hacia_atras and 1 or -1
+                last_motion_marker = {escape_dir * back_threshold * porcentaje, 0}
+                current_wait_ticks = 0
+                obs_stop_flag = false
+                
+                local msg = string.format("EVADIENDO OBJETO FÍSICO | %s | Intensidad SP: %.2f", (escape_dir > 0 and "Avanzando" or "Retrocediendo"), prox_data[1])
+                change_al_state("EVASION_SP", msg)
+            end
+        else
+            current_wait_ticks = 0
+        end
+
+        -- Extraemos las velocidades dinámicas (si el módulo no las envía, usamos las máximas por defecto)
+        local dyn_sd = last_motion_marker[3] or d_speed
+        local dyn_sg = last_motion_marker[4] or g_speed
+
+        move(last_motion_marker[1], last_motion_marker[2], dyn_sd, dyn_sg, false, robot.id, obs_stop_flag)
+
+    else
+        current_wait_ticks = 0 
+    end
+
+    if robot.colored_blob_omnidirectional_camera then               
+        local blobs         = robot.colored_blob_omnidirectional_camera
+        local yellow_blobs  = {} 
+        local green_blobs   = {}  
+        local count         = 0   
+
+        -- FASE A: Recolección y Ruido
+        for i, blob in ipairs(blobs) do
+            local raw_angle = blob.angle * (180 / math.pi)
+            local raw_dist = blob.distance
+            local noisy_dist, noisy_angle = NoiseManager.aplicar_ruido(raw_dist, raw_angle, noise_cfg) 
+            local r, g, b = blob.color.red, blob.color.green, blob.color.blue
+
+            if evaluator_ruido then evaluator_ruido (raw_angle, raw_dist, noisy_angle, noisy_dist) end
+
+            if r > 200 and g > 200 and b < 100 then table.insert(yellow_blobs, {angle = noisy_angle, distance = noisy_dist, type = 2})
+            elseif r < 100 and g > 200 and b < 100 then table.insert(green_blobs, {angle = noisy_angle, distance = noisy_dist})
+            elseif  r > 200 and g < 100 and b < 100 then table.insert(yellow_blobs, {angle = noisy_angle, distance = noisy_dist, type = 1})
+            end 
+        end
+
+        local updated_anterior_indices = {}
+        local matched_new_indices = {}
+        local fallos_maestros = {}
+
+        -- FASE A.5: CORRECCIÓN DE ODOMETRÍA
+        if motion_active then
+            local ang_total_1_rad = move_angle + srt_ang_mark_ant 
+            local x_new_r, y_new_r = math_helper.polarACartesianoPAR(move_distance, ang_total_1_rad)
+            
+            x_mark = x_new_r + x_ant_r
+            y_mark = y_new_r + y_ant_r
+            
+            if c1 == 2 then 
+                srt_ang_mark_ant = normalize_angle_rad(move_angle + srt_ang_mark_ant)
+                x_ant_r = x_mark
+                y_ant_r = y_mark
+                motion_active = false
+                current_wait_ticks = 0 
+                r_move() 
+                robot.wheels.set_velocity(0, 0)
+                change_al_state("IDLE", "") 
+            end
+        else
+            x_mark = x_ant_r
+            y_mark = y_ant_r
+        end
+        
+        local obs_ang_offset_global = srt_ang_mark_ant + (motion_active and move_angle or 0)
+
+        -- FASE B: ACTUALIZACIÓN DE MAESTROS EXISTENTES
+        local candidatos = {}
+        for j, new_data in ipairs(yellow_blobs) do
+            local ang_total_blob = (new_data.angle * (math.pi/180)) + obs_ang_offset_global
+            local bx_rel, by_rel = math_helper.polarACartesianoPAR(new_data.distance, ang_total_blob)
+            local bx_global = bx_rel + x_mark
+            local by_global = by_rel + y_mark
+            
+            for k, anterior_data in pairs(srt_anterior_data) do
+                if anterior_data.angle and master_tracking[k] and #master_tracking[k].raw_x > 0 then
+                    local num_pts = #master_tracking[k].raw_x
+                    local mx_global = master_tracking[k].raw_x[num_pts]
+                    local my_global = master_tracking[k].raw_y[num_pts]
+                    local error_dist = math.sqrt((bx_global - mx_global)^2 + (by_global - my_global)^2)
+                    if error_dist <= distance_treshold then
+                        table.insert(candidatos, {blob_idx = j, master_idx = k, error = error_dist})
+                    end
+                end
+            end
+        end
+
+        table.sort(candidatos, function(a, b) return a.error < b.error end)
+
+        for _, cand in ipairs(candidatos) do
+            local j = cand.blob_idx
+            local k = cand.master_idx
+            if not matched_new_indices[j] and not updated_anterior_indices[k] then
+                srt_anterior_data[k].angle = yellow_blobs[j].angle
+                srt_anterior_data[k].distance = yellow_blobs[j].distance
+                srt_anterior_data[k].type = yellow_blobs[j].type 
+                fallos_maestros[k] = nil 
+                updated_anterior_indices[k] = true
+                matched_new_indices[j] = true
+                count = count + 1
+            end
+        end
+
+        for k, anterior_data in pairs(srt_anterior_data) do
+            if anterior_data.angle and not updated_anterior_indices[k] and master_tracking[k] and #master_tracking[k].raw_x > 0 then
+                local num_pts = #master_tracking[k].raw_x
+                local mx_global = master_tracking[k].raw_x[num_pts]
+                local my_global = master_tracking[k].raw_y[num_pts]
+                local distancias_sobrantes = {}
+                for j, new_data in ipairs(yellow_blobs) do
+                    if not matched_new_indices[j] then
+                        local ang_total_blob = (new_data.angle * (math.pi/180)) + obs_ang_offset_global
+                        local bx_rel, by_rel = math_helper.polarACartesianoPAR(new_data.distance, ang_total_blob)
+                        local bx_global = bx_rel + x_mark
+                        local by_global = by_rel + y_mark
+                        local error_dist = math.sqrt((bx_global - mx_global)^2 + (by_global - my_global)^2)
+                        table.insert(distancias_sobrantes, string.format("%.2f cm", error_dist))
+                    end
+                end
+                local msg_razon = string.format("Ningún blob válido a menos de %.2f cm.", distance_treshold)
+                if #distancias_sobrantes > 0 then msg_razon = msg_razon .. " Blobs sobrantes a: " .. table.concat(distancias_sobrantes, " | ")
+                else msg_razon = msg_razon .. " No se detectaron blobs sobrantes." end
+                fallos_maestros[k] = msg_razon
+            end
+        end
+
+        -- FASE C: CREAR NUEVOS MAESTROS
+        for j, new_data in ipairs(yellow_blobs) do
+            if not matched_new_indices[j] then
+                table.insert(srt_anterior_data, {angle = new_data.angle, distance = new_data.distance, type = new_data.type or 2})
+                local new_k = #srt_anterior_data
+                updated_anterior_indices[new_k] = true
+                initialize_master_tracking(new_k, new_data.angle, new_data.distance, srt_anterior_data[new_k].type)
+            end
+        end
+
+        -- FASE D: PROCESAR BLOBS VERDES
+        for _, green_blob in ipairs(green_blobs) do
+            local ang_total_green = (green_blob.angle * (math.pi/180)) + obs_ang_offset_global
+            local gbx_rel, gby_rel = math_helper.polarACartesianoPAR(green_blob.distance, ang_total_green)
+            local gbx = gbx_rel + x_mark
+            local gby = gby_rel + y_mark
+            
+            for k, master_data in pairs(srt_anterior_data) do
+                if master_data.angle and not updated_anterior_indices[k] and master_tracking[k] and #master_tracking[k].raw_x > 0 then 
+                    local num_pts = #master_tracking[k].raw_x
+                    local mx = master_tracking[k].raw_x[num_pts]
+                    local my = master_tracking[k].raw_y[num_pts]
+                    local dist_error = math.sqrt((gbx - mx)^2 + (gby - my)^2)
+                    if dist_error <= distance_treshold then
+                        srt_anterior_data[k].type = 3 
+                        updated_anterior_indices[k] = true 
+                        master_tracking[k].End_of_pattern_detected = true
+                        break 
+                    end
+                end
+            end 
+        end
+
+        -- =========================================================================
+        -- [INICIO DE GESTOR DE COLA DE EVASIÓN Y PAUSAS]
+        -- =========================================================================
+        if not al_evasion_queue then al_evasion_queue = {} end
+        if not al_pause_timer then al_pause_timer = 0 end
+
+        -- =========================================================================
+        -- FASE E: CÁLCULO Y DECISIÓN DE MOVIMIENTO (ACTIVE LEARNING CENTRALIZADO)
+        -- =========================================================================
+        if ActiveLearning and ActiveLearning.process then
+            local al_result = ActiveLearning.process(obs_ang_offset_global, updated_anterior_indices)
+            
+            if al_result then
+                local prox_data = proximidad()
+                local is_prox_critical = (prox_data[1] > al_result.prox_threshold)
+                local is_cam_critical = (al_result.closest_dist < al_result.front_threshold)
+                
+                local is_evading = (al_current_state == "EVASION_VISUAL" or al_current_state == "EVASION_CIEGA" or al_current_state == "EVASION_LATERAL")
+                local override_normal_move = false
+
+                -- 1. DETENER MOVIMIENTO SI HAY UNA EMERGENCIA NUEVA (Y no estamos ya evadiendo)
+                if (is_prox_critical or is_cam_critical) and motion_active and not is_evading then
+                    srt_ang_mark_ant = normalize_angle_rad(move_angle + srt_ang_mark_ant)
+                    x_ant_r = x_mark; y_ant_r = y_mark
+                    motion_active = false
+                    r_move()  
+                    robot.wheels.set_velocity(0, 0)
+                    al_evasion_queue = {} -- Limpiar cola, la nueva emergencia manda
+                    al_pause_timer = 0
+                end
+
+                -- 2. GENERACIÓN DE RUTAS DE ESCAPE (Si estamos detenidos y no hay nada encolado)
+                if (is_prox_critical or is_cam_critical) and #al_evasion_queue == 0 and not motion_active then
+                    override_normal_move = true
+                    
+                    local is_sandwich = false
+                    if is_prox_critical and is_cam_critical then
+                        local diff = math.abs(al_result.closest_angle - prox_data[2])
+                        if diff > 90 and diff < 270 then is_sandwich = true end
+                    end
+                    
+                    if is_sandwich then
+                        -- REGLA C: Sándwich -> Evasión Lateral (90° respecto a la cámara)
+                        local escape_ang = al_result.closest_angle + 90
+                        table.insert(al_evasion_queue, {
+                            dist = al_result.back_threshold, ang = escape_ang, 
+                            sp_d = d_speed, sp_g = g_speed, msg = "Evasión Lateral (Sándwich)", state = "EVASION_LATERAL"
+                        })
+                        
+                    elseif is_cam_critical then
+                        -- REGLA A: Solo Cámara o Mismo Lado -> Evasión Visual
+                        local escape_ang = (al_result.closest_angle > 0) and (al_result.closest_angle - 180) or (al_result.closest_angle + 180)
+                        table.insert(al_evasion_queue, {
+                            dist = al_result.back_threshold, ang = escape_ang, 
+                            sp_d = d_speed, sp_g = g_speed, msg = "Evasión Visual (Cámara)", state = "EVASION_VISUAL"
+                        })
+                        
+                    elseif is_prox_critical then
+                        -- REGLA B: Solo Proximidad -> Evasión Ciega en 2 Pasos
+                        local sign = (prox_data[2] >= 0) and -1 or 1
+                        local ang_1 = 45 * sign
+                        local ang_2 = -45 * sign
+                        
+                        -- Si está adelante, la base de escape es hacia atrás (180). Si está atrás, hacia adelante (0).
+                        local base_escape = (math.abs(prox_data[2]) <= 90) and 180 or 0
+                        
+                        table.insert(al_evasion_queue, {
+                            dist = al_result.back_threshold, ang = base_escape + ang_1, 
+                            sp_d = d_speed, sp_g = g_speed, msg = "Evasión Ciega P1", state = "EVASION_CIEGA"
+                        })
+                        table.insert(al_evasion_queue, {
+                            dist = al_result.back_threshold, ang = ang_2, 
+                            sp_d = d_speed, sp_g = g_speed, msg = "Evasión Ciega P2", state = "EVASION_CIEGA"
+                        })
+                    end
+                end
+
+                -- REGLA 4 / 3.a.2: Verificación de Solapamiento con el Centroide
+                -- Solo se hace si no hay emergencias (override_normal_move = false)
+                if not override_normal_move and al_result.is_centroid and al_result.should_move then
+                    local is_overlapping = false
+                    for k, data in pairs(srt_anterior_data) do
+                        if updated_anterior_indices[k] and data.distance then
+                            local r_x, r_y = math_helper.polarACartesianoPAR(data.distance, data.angle * (math.pi/180))
+                            local dist_c_to_r = math.sqrt((al_result.target_x - r_x)^2 + (al_result.target_y - r_y)^2)
+                            -- Radio de solapamiento: 15cm
+                            if dist_c_to_r < 15.0 then is_overlapping = true; break end
+                        end
+                    end
+                    
+                    if is_overlapping then
+                        change_al_state("ESPERANDO_DESPEJE", "Centroide solapado con robot. Modo estático.")
+                        override_normal_move = true -- Nos quedamos quietos
+                    end
+                end
+
+                -- 3. EJECUTOR DE COLA DE EVASIÓN Y PAUSAS
+                if al_pause_timer > 0 and not motion_active then
+                    al_pause_timer = al_pause_timer - 1
+                
+                elseif not motion_active and #al_evasion_queue > 0 then
+                    local next_step = table.remove(al_evasion_queue, 1)
+                    local ev_ang = next_step.ang
+                    local ev_dist = next_step.dist
+
+                    -- Normalizar ángulo a -180 / 180
+                    while ev_ang > 180 do ev_ang = ev_ang - 360 end
+                    while ev_ang < -180 do ev_ang = ev_ang + 360 end
+
+                    -- OPTIMIZACIÓN REVERSA
+                    if ev_ang > 90 then ev_ang = ev_ang - 180; ev_dist = -ev_dist
+                    elseif ev_ang < -90 then ev_ang = ev_ang + 180; ev_dist = -ev_dist end
+                    
+                    motion_active = true
+                    last_motion_marker = {ev_dist, ev_ang, next_step.sp_d, next_step.sp_g}
+                    
+                    -- AQUÍ se marca el estado para proteger la maniobra
+                    change_al_state(next_step.state, next_step.msg) 
+                    r_move()
+
+                -- 4. MOVIMIENTO NORMAL Y DESVÍOS (Solo si no hay emergencias ni solapamientos)
+                elseif not override_normal_move and not motion_active and al_result.should_move then
+                    
+                    if al_result.pause_ticks > 0 then
+                        al_pause_timer = al_result.pause_ticks
+                    else
+                        local path_blocked = false
+                        if al_result.is_centroid then
+                            local T_len = al_result.target_dist
+                            for k, data in pairs(srt_anterior_data) do
+                                if updated_anterior_indices[k] and data.distance and data.distance < T_len then
+                                    local R_ang_rad = data.angle * (math.pi/180)
+                                    local T_ang_rad = al_result.target_angle * (math.pi/180)
+                                    local angle_diff = R_ang_rad - T_ang_rad
+                                    local p = data.distance * math.cos(angle_diff)
+                                    
+                                    if p > 0 and p < T_len then
+                                        local dist_to_path = math.abs(data.distance * math.sin(angle_diff))
+                                        if dist_to_path < (al_result.front_threshold * 0.8) then
+                                            path_blocked = true; break
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        
+                        if path_blocked then
+                            -- Desvío preventivo
+                            table.insert(al_evasion_queue, {
+                                dist = al_result.target_dist / 2, ang = al_result.target_angle + 45, 
+                                sp_d = d_speed, sp_g = g_speed, msg = "Parada Extra: Rodeando bloqueo", state = "CALCULANDO_DESVIO"
+                            })
+                            change_al_state("CALCULANDO_DESVIO", "Ruta bloqueada, encolando desvío.")
+                        else
+                            local opt_ang = al_result.target_angle
+                            local opt_dist = al_result.target_dist * porcentaje
+                            
+                            -- OPTIMIZACIÓN REVERSA
+                            if opt_ang > 90 then opt_ang = opt_ang - 180; opt_dist = -opt_dist
+                            elseif opt_ang < -90 then opt_ang = opt_ang + 180; opt_dist = -opt_dist end
+
+                            motion_active = true
+                            last_motion_marker = {opt_dist, opt_ang, al_result.speed_d, al_result.speed_g}
+                            change_al_state(al_result.state_name, al_result.state_msg)
+                            r_move()
+                        end
+                    end
+                end
+            end
+        end
+
+        -- =========================================================================
+        -- FASE G: Gestión de Pérdidas y Procesamiento de Rutas
+        -- =========================================================================
+        for k = 1, #srt_anterior_data do
+            local track = master_tracking[k]
+            local is_lost = (srt_anterior_data[k] and srt_anterior_data[k].angle and not updated_anterior_indices[k])
+            local is_finished = track and track.End_of_pattern_detected
+            if is_lost then
+                if SRP_LOG_MODE == 1 or SRP_LOG_MODE == 3 then
+                    local razon = fallos_maestros[k] or "Sin blobs amarillos cerca."
+                    log("\n[!] Maestro " .. k .. " PERDIDO. Razón: " .. razon)
+                end
+            end
+            if (is_lost or is_finished) and track and not track.processed then
+                process_single_observation(k, track)
+                track.processed = true
+                srt_anterior_data[k].angle = nil
+                srt_anterior_data[k].distance = nil
+                srt_anterior_data[k].type = nil
+            end
+        end
+
+        -- =========================================================================
+        -- FASE H: Grabación Continua
+        -- =========================================================================
+        for k, _ in pairs(updated_anterior_indices) do
+            local master_data = srt_anterior_data[k]
+            local track = master_tracking[k]
+            if master_data and track and not track.processed then
+                local current_distance = master_data.distance
+                local current_angle_rad = master_data.angle * (math.pi / 180) 
+                local ty = master_data.type
+                
+                local ang_total = current_angle_rad + obs_ang_offset_global
+                local x_new, y_new = math_helper.polarACartesianoPAR(current_distance, ang_total)
+                local x_original = x_new + x_mark
+                local y_original = y_new + y_mark
+
+                if Print_tracker_trayectory_data then Print_tracker_trayectory_data("trajectory", k, x_original/100, y_original/100, false) end
+                process_master_segmentation(k, track, x_original, y_original, ty)
+            end
+        end
+    end 
 end
 
 
-
-1. Si el robot detecta algo en el cono frontal es decir la intensidad máxima viene de (incluidos) -45 a 45° entonces si me detengo y giro. Y solo si esa intensidad es mayor a 0.4
-2. si la intensidad es mayor a 0.4 pero es en los dos laterales por ejem 90 o -90 solo me detengo si es mayor a 0.8
-3. el de atrás (180 o -180) lo ignoro
-4. Mantén lo de que cuantos grados gira depende de que sensor haya dado la lectura. 
-5. Esos valores de intensidad agrega variables para seteralos no los hardcodes.
+Deben funcionar igual, ambos reciben la misma entrada en procesar datos, ya de ahi en adelante calculan independientemente. Lo de active learning tampoco se implementa en python ya que no influye en como se mueve eso es propio de la simulación. 

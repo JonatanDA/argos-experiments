@@ -1,0 +1,43 @@
+--========================================================================
+-- ARCHIVO DE MODIFICACIÓN PARA Ks5.lua
+--========================================================================
+
+-- 1. Añade esta función en tu Ks5.lua (puedes colocarla junto a `Print_tracker_trayectory_data` o `Print_tracker_paciencia`):
+
+function Print_tracker_python(obs_ang_offset_global, x_mark, y_mark, yellow_blobs, green_blobs)
+    local py_str = "[python];observation;" .. tostring(obs_ang_offset_global) .. ";" .. tostring(x_mark) .. ";" .. tostring(y_mark) .. ";"
+    
+    local yb_strs = {}
+    if yellow_blobs then
+        for _, b in ipairs(yellow_blobs) do
+            table.insert(yb_strs, b.angle .. "," .. b.distance .. "," .. (b.type or 2))
+        end
+    end
+    py_str = py_str .. table.concat(yb_strs, "|") .. ";"
+    
+    local gb_strs = {}
+    if green_blobs then
+        for _, b in ipairs(green_blobs) do
+            table.insert(gb_strs, b.angle .. "," .. b.distance)
+        end
+    end
+    py_str = py_str .. table.concat(gb_strs, "|")
+    
+    print(py_str)
+end
+
+-- 2. DENTRO de la función `procesar_datos_logicos_y_reconstruccion(datos_fisicos)` original en LUA:
+-- Al puro inicio de la función, antes de llamar al check_patience..., inyecta la lectura hacia python:
+-- (Asegúrate de tener acceso a x_mark y y_mark. Como procesar_datos_logicos_y_reconstruccion está dentro del mismo archivo donde x_mark es global, puedes acceder a ellas directamente).
+
+Print_tracker_python(datos_fisicos.obs_ang_offset_global, x_mark, y_mark, datos_fisicos.yellow_blobs, datos_fisicos.green_blobs)
+
+-- 3. DENTRO de la función `check_patience_and_reconstruct()` en LUA:
+-- Justo cuando la paciencia llega a cero y va a lanzar la reconstrucción:
+
+if current_patience <= 0 then
+    print("[python];patience_timeout")  -- <--- AÑADE ESTA LÍNEA AQUÍ
+    -- ... continúa con el código original ...
+    local datos_guardados = ParameterStorage.get_stored_data()
+    -- ...
+end
