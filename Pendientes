@@ -1,117 +1,32 @@
-Perfecto. Asi funciona muy bien, ayudame a agregar unos detalles.
+1. Active learning.
 
--- Variables globales de estado para el Random Walk
-RW_b1 = 0
-Rw_target_angle = 0
+	Implementar modelos de Active learning.
+	
+	1. Centroide de información ✅ 													
+	2. Centroide de información con threshold ✅ 
+	3. Centroide de información con seguimiento de centroide mediante PID ✅ 
+	4. Campos vectoriales ✅ 
+	5. Implementar nuevo modelo de Active Learning basado en información nueva. 
+		-> Debido al rango de percepción corto no explora nuevas áreas con información nueva.
+		-> Se implementó un modelo con exploración de áreas con random walking para encontrar nuevas áreas de interés. ✅ 
 
--- Variables de Memoria para la lógica Anti-Atascos
-RW_stuck_counter = 0     -- Cuenta cuántas veces seguidas choca en un corto periodo
-RW_clear_path_timer = 0  -- Mide cuántos "ticks" ha avanzado sin chocar
+2. Implementar experiento planteado en reunión 23/sep
 
-function RandomWalking()
-    -- Obtenemos la tabla detallada de la nueva función de proximidad
-    local datos_prox = proximidad(true)
+	Escenario con múltiples comportamientos en la arena y un aprendiz ubicado en una esquina. ✅  
+	
+2. Migrar las funciones de procesamiento en Lua a python.
 
-    if RW_b1 == 0 then
-        -- ==========================================================
-        -- ESTADO 0: AVANZANDO Y EVALUANDO
-        -- ==========================================================
-        
-        -- Incrementamos el temporizador de camino libre
-        RW_clear_path_timer = RW_clear_path_timer + 1
-        
-        -- Si hemos avanzado un buen rato sin obstáculos, reseteamos la memoria de atascos
-        if RW_clear_path_timer > 30 and datos_prox.max_val.valor < 0.3 then
-            RW_stuck_counter = 0
-        end
-
-        local max_val = datos_prox.max_val.valor
-        local max_ang = datos_prox.max_val.angulo
-
-        -- DETONANTE: Obstáculo peligroso (> 0.8) y QUE NO SEA EL SENSOR TRASERO
-        -- Se usa math.abs(max_ang) ~= 180 para ignorar colisiones por detrás mientras avanzamos.
-        if max_val > 0.4 and math.abs(max_ang) ~= 180 then
-            
-            -- 1. Detener motores de inmediato
-            robot.wheels.set_velocity(0, 0)
-            
-            -- 2. Reseteamos el contador de "camino libre" y aumentamos la "frustración"
-            RW_clear_path_timer = 0
-            RW_stuck_counter = RW_stuck_counter + 1
-            
-            -- 3. TOMA DE DECISIÓN DEL ÁNGULO DE EVASIÓN
-            if RW_stuck_counter >= 3 then
-                -- CASO A: Atascado en un callejón o esquina compleja (Anti-Stuck)
-                -- Fuerza un giro de entre 160° y 180° para salir por donde vino
-                Rw_target_angle = robot.random.uniform_int(160, 180)
-                
-                -- Giramos hacia el lado más despejado por eficiencia
-                if max_ang < 0 then 
-                    Rw_target_angle = -Rw_target_angle 
-                end
-                
-                RW_stuck_counter = 0 -- Reseteamos la frustración porque ya tomamos acción extrema
-                
-            else
-                -- CASO B: Evasión Inteligente basada en el sensor específico
-                if max_ang == 0 then
-                    -- Frente exacto: 50% probabilidad izq/der. Giro amplio.
-                    if robot.random.uniform_int(0, 1) == 0 then
-                        Rw_target_angle = robot.random.uniform_int(90, 160)
-                    else
-                        Rw_target_angle = robot.random.uniform_int(-160, -90)
-                    end
-                    
-                elseif max_ang == 45 then
-                    -- Obstáculo Frente-Izquierda: Girar a la derecha
-                    Rw_target_angle = robot.random.uniform_int(-150, -90)
-                    
-                elseif max_ang == -45 then
-                    -- Obstáculo Frente-Derecha: Girar a la izquierda
-                    Rw_target_angle = robot.random.uniform_int(90, 150)
-                    
-                elseif max_ang == 90 then
-                    -- Roce Lateral Izquierdo: Giro medio/suave a la derecha para separarse
-                    Rw_target_angle = robot.random.uniform_int(-90, -45)
-                    
-                elseif max_ang == -90 then
-                    -- Roce Lateral Derecho: Giro medio/suave a la izquierda para separarse
-                    Rw_target_angle = robot.random.uniform_int(45, 90)
-                    
-                else
-                    -- Fallback de seguridad (Si algo altera los ángulos)
-                    Rw_target_angle = robot.random.uniform_int(90, 180)
-                end
-            end
-            
-            -- Cambiamos al estado de giro
-            RW_b1 = 1
-            
-        else
-            -- Si no hay peligro al frente o a los lados, avanzar
-            robot.wheels.set_velocity(30, 30)
-        end
-
-    elseif RW_b1 == 1 then
-        -- ==========================================================
-        -- ESTADO 1: GIRANDO PARA EVADIR
-        -- ==========================================================
-        move(0, Rw_target_angle, 30, 80)
-
-        -- Revisamos las banderas globales de la función move() para saber si ya terminó
-        if c1 == 2 then
-            RW_b1 = 0
-            Rw_target_angle = 0
-            c1 = 0
-            c2 = 0
-        end
-    end
-end
+	Primer paso para migrar de simulaición en ARGoS3 a Ros
+	
+	1. Migrar las funciones de procesamiento (módulos) en Lua a python y probar con los mismos datos obtenidos en simulación su desempeño. ✅ 
+	2. Probar los módulos de python con dataset real
 
 
+3. Corregir rango de visión del Qupa.
 
-1. Si el robot detecta algo en el cono frontal es decir la intensidad máxima viene de (incluidos) -45 a 45° entonces si me detengo y giro. Y solo si esa intensidad es mayor a 0.4
-2. si la intensidad es mayor a 0.4 pero es en los dos laterales por ejem 90 o -90 solo me detengo si es mayor a 0.8
-3. el de atrás (180 o -180) lo ignoro
-4. Mantén lo de que cuantos grados gira depende de que sensor haya dado la lectura. 
-5. Esos valores de intensidad agrega variables para seteralos no los hardcodes.
+	El robot tiene un rango de visón definido por un cuadrado.
+	
+	1. Aplicar saturación dentro del controlador Lua para simular un rango de visión circular. ✅ 
+	2. Corregir dentro de argos3/src/plugins/robots/generic/simulator/colored_blob_omnidirectional_camera_rotzonly_sensor.cpp ✅ 
+		Agregado a issues en el repo de coral-espol: Bug: FOV cuadrado en cámara omnidireccional de ARGoS3 afecta la detección del QUPA (Solución propuesta)
+

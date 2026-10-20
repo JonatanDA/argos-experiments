@@ -133,14 +133,14 @@ TRACKERS = [
         "script": "scripts/tracker_python_gestor.py",
         "args": []
     },
-    {
-        "script": "scripts/tracker_trayectory.py",
-        "args": []
-    },
-    {
-        "script": "scripts/tracker_paciencia.py",
-        "args": []
-    },
+    # {
+    #     "script": "scripts/tracker_trayectory.py",
+    #     "args": []
+    # },
+    # {
+    #     "script": "scripts/tracker_paciencia.py",
+    #     "args": []
+    # },
     # {
     #     "script": "scripts/tracker_AL_PID.py",
     #     "args": []o
@@ -203,7 +203,7 @@ MAX_IDLE_TIMEOUT_SEC            = 240
 # 1: Recomendado (Muestra eventos vitales: inicios, cierres, guardados de evaluadores).
 # 2: Detallado (Modo 1 + Prints específicos etiquetados de los Trackers, sin mezclar salidas ruidosas).
 # 3: Todo (Modo 2 + Datos puros de ARGoS como variables continuas, timers, alertas internas, etc).
-NIVEL_LOG = 2
+NIVEL_LOG = 3
 
 tracker_activity = {}
 print_lock = threading.Lock()

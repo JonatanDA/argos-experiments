@@ -30,8 +30,7 @@
 # =============================================================================
 
 import math
-from Observer import math_helper
-
+from Python_Gestor.Functions import math_helper
 
 class PointCloudSegmenter:
     # =============================================================================

@@ -346,7 +346,7 @@ timer = 1
 function step()
 
     if robot.id == "Qupa4" and 
-        ( evaluator_ruido or Print_tracker_trayectory_data or Print_tracker_paciencia or Print_tracker_AL_PID) then 
+        ( evaluator_ruido or Print_tracker_trayectory_data or Print_tracker_paciencia or Print_tracker_AL_PID or Print_tracker_python) then 
             print("Timer="..timer) 
     end
 
@@ -2328,6 +2328,7 @@ function soft_reset_observer()
     current_patience = MAX_PATIENCE
     master_tracking = {}
     srt_anterior_data = {}
+    AP_1 = 1
     
     change_al_state("IDLE", "Fin del Random Walk, volviendo a observar")
 end
